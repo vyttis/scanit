@@ -22,7 +22,7 @@ export default async function AdminUsersPage() {
     redirect('/dashboard');
   }
 
-  // Get pending users with their org info
+  // Get all users with their org info
   const { data: pendingUsers } = await serviceClient
     .from('profiles')
     .select(`
@@ -30,6 +30,7 @@ export default async function AdminUsersPage() {
       first_name,
       last_name,
       status,
+      role,
       created_at,
       org_id,
       organizations (
@@ -38,7 +39,7 @@ export default async function AdminUsersPage() {
         domain
       )
     `)
-    .in('status', ['pending', 'approved', 'rejected'])
+    .in('status', ['pending', 'approved', 'rejected', 'suspended'])
     .order('created_at', { ascending: false });
 
   // Get emails from auth.users
@@ -56,6 +57,7 @@ export default async function AdminUsersPage() {
       lastName: u.last_name || '',
       email: emailMap.get(u.id) || '',
       status: u.status as string,
+      role: u.role as string || 'viewer',
       createdAt: u.created_at,
       organizationName: org?.name || '',
       organizationDomain: org?.domain || '',

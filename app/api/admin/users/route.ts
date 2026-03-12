@@ -37,16 +37,90 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Draudžiama.' }, { status: 403 });
     }
 
-    const { userId, action } = await request.json();
+    const body = await request.json();
+    const { userId, action, role: newRole } = body;
 
     if (!userId || typeof userId !== 'string' || !isValidUuid(userId)) {
       return NextResponse.json({ error: 'Netinkamas vartotojo ID formatas.' }, { status: 400 });
     }
 
-    if (!['approve', 'reject'].includes(action)) {
+    if (!['approve', 'reject', 'change_role', 'suspend'].includes(action)) {
       return NextResponse.json({ error: 'Neteisingi parametrai.' }, { status: 400 });
     }
 
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+      request.headers.get('x-real-ip') || 'unknown';
+
+    // Handle role change
+    if (action === 'change_role') {
+      if (!newRole || !['admin', 'viewer'].includes(newRole)) {
+        return NextResponse.json({ error: 'Netinkama rolė.' }, { status: 400 });
+      }
+
+      // Prevent changing superadmin role
+      const { data: targetProfile } = await serviceClient
+        .from('profiles')
+        .select('role')
+        .eq('id', userId)
+        .single();
+
+      if (targetProfile?.role === 'superadmin') {
+        return NextResponse.json({ error: 'Negalima keisti superadmino rolės.' }, { status: 400 });
+      }
+
+      const { error: roleError } = await serviceClient
+        .from('profiles')
+        .update({ role: newRole })
+        .eq('id', userId);
+
+      if (roleError) {
+        return NextResponse.json({ error: 'Klaida keičiant rolę.' }, { status: 500 });
+      }
+
+      await serviceClient.from('audit_log').insert({
+        org_id: null,
+        user_id: user.id,
+        action: 'role_changed',
+        details: { target_user_id: userId, new_role: newRole },
+        ip_address: ip,
+      });
+
+      return NextResponse.json({ success: true });
+    }
+
+    // Handle suspend
+    if (action === 'suspend') {
+      const { data: targetProfile } = await serviceClient
+        .from('profiles')
+        .select('role')
+        .eq('id', userId)
+        .single();
+
+      if (targetProfile?.role === 'superadmin') {
+        return NextResponse.json({ error: 'Negalima sustabdyti superadmino.' }, { status: 400 });
+      }
+
+      const { error: suspendError } = await serviceClient
+        .from('profiles')
+        .update({ status: 'suspended' })
+        .eq('id', userId);
+
+      if (suspendError) {
+        return NextResponse.json({ error: 'Klaida sustabdant vartotoją.' }, { status: 500 });
+      }
+
+      await serviceClient.from('audit_log').insert({
+        org_id: null,
+        user_id: user.id,
+        action: 'user_suspended',
+        details: { target_user_id: userId },
+        ip_address: ip,
+      });
+
+      return NextResponse.json({ success: true });
+    }
+
+    // Handle approve/reject
     const newStatus = action === 'approve' ? 'approved' : 'rejected';
 
     // Update profile status
@@ -97,8 +171,6 @@ export async function POST(request: NextRequest) {
     }
 
     // Audit log: admin approval/rejection
-    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-      request.headers.get('x-real-ip') || 'unknown';
     await serviceClient.from('audit_log').insert({
       org_id: null,
       user_id: user.id,

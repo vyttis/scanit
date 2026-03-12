@@ -32,6 +32,11 @@ export default async function DashboardLayout({
     .eq('id', user.id)
     .single();
 
+  // Redirect pending/rejected users to waiting page
+  if (profile?.status === 'pending' || profile?.status === 'rejected') {
+    redirect('/laukiama');
+  }
+
   const isSuperadmin = profile?.role === 'superadmin';
 
   const navItems = [
@@ -57,8 +62,8 @@ export default async function DashboardLayout({
                   </NavLink>
                 ))}
                 {isSuperadmin && (
-                  <NavLink href="/admin/vartotojai">
-                    Vartotojai
+                  <NavLink href="/admin">
+                    Administravimas
                   </NavLink>
                 )}
               </div>

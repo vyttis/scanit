@@ -55,8 +55,8 @@ export function MobileMenu({ navItems, isSuperadmin, userEmail, userRole }: Mobi
             ))}
             {isSuperadmin && (
               <div className="py-2" onClick={() => setOpen(false)}>
-                <NavLink href="/admin/vartotojai">
-                  Vartotojai
+                <NavLink href="/admin">
+                  Administravimas
                 </NavLink>
               </div>
             )}

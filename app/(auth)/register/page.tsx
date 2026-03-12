@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 const BLOCKED_DOMAINS = [
@@ -19,6 +20,7 @@ function extractDomain(input: string): string {
 }
 
 export default function RegisterPage() {
+  const router = useRouter();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
@@ -27,7 +29,6 @@ export default function RegisterPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
 
   function validateDomains(): string | null {
@@ -105,37 +106,18 @@ export default function RegisterPage() {
         return;
       }
 
-      setSuccess(true);
+      const params = new URLSearchParams({
+        name: `${firstName.trim()} ${lastName.trim()}`,
+        org: orgName.trim(),
+        email: email.trim().toLowerCase(),
+      });
+      router.push(`/registracija-gauta?${params.toString()}`);
+      return;
     } catch {
       setError('Tinklo klaida. Bandykite dar kartą.');
     }
 
     setLoading(false);
-  }
-
-  if (success) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="max-w-md w-full space-y-8 p-8 bg-white rounded-lg shadow-md">
-          <div className="text-center">
-            <h1 className="text-2xl font-bold text-gray-900">
-              Registracija gauta
-            </h1>
-            <p className="mt-4 text-gray-600">
-              Jūsų registracijos prašymas sėkmingai pateiktas. Administratorius
-              peržiūrės Jūsų paraišką ir gausite pranešimą el. paštu
-              adresu <strong>{email}</strong>.
-            </p>
-            <Link
-              href="/login"
-              className="mt-6 inline-block text-blue-600 hover:text-blue-500 font-medium"
-            >
-              Grįžti į prisijungimą
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
   }
 
   return (
