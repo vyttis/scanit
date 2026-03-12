@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { LogoutButton } from '@/components/logout-button';
 import { NavLink } from '@/components/nav-link';
+import { MobileMenu } from '@/components/mobile-menu';
 
 export default async function DashboardLayout({
   children,
@@ -33,37 +34,36 @@ export default async function DashboardLayout({
 
   const isSuperadmin = profile?.role === 'superadmin';
 
+  const navItems = [
+    { href: '/dashboard', label: 'Valdymo skydelis' },
+    { href: '/scans', label: 'Skenavimai' },
+    { href: '/reports', label: 'Ataskaitos' },
+    { href: '/settings', label: 'Nustatymai' },
+  ];
+
   return (
     <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white border-b border-gray-200">
+      <nav className="bg-white border-b border-gray-200 relative" role="navigation" aria-label="Pagrindinė navigacija">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
             <div className="flex items-center space-x-8">
-              <Link href="/dashboard" className="text-xl font-bold text-gray-900">
+              <Link href="/dashboard" className="text-xl font-bold text-gray-900" aria-label="scanit.lt pradžia">
                 scanit.lt
               </Link>
-              <NavLink href="/dashboard">
-                Valdymo skydelis
-              </NavLink>
-              <NavLink href="/scans">
-                Skenavimai
-              </NavLink>
-              <NavLink href="/reports">
-                Ataskaitos
-              </NavLink>
-              <NavLink href="/settings">
-                Nustatymai
-              </NavLink>
-              {isSuperadmin && (
-                <NavLink
-                  href="/admin/vartotojai"
-                  className="text-sm text-purple-600 hover:text-purple-900 font-medium"
-                >
-                  Vartotojai
-                </NavLink>
-              )}
+              <div className="hidden md:flex items-center space-x-6">
+                {navItems.map((item) => (
+                  <NavLink key={item.href} href={item.href}>
+                    {item.label}
+                  </NavLink>
+                ))}
+                {isSuperadmin && (
+                  <NavLink href="/admin/vartotojai">
+                    Vartotojai
+                  </NavLink>
+                )}
+              </div>
             </div>
-            <div className="flex items-center space-x-4">
+            <div className="hidden md:flex items-center space-x-4">
               <span className="text-sm text-gray-500">{user.email}</span>
               {profile?.role && (
                 <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
@@ -71,6 +71,14 @@ export default async function DashboardLayout({
                 </span>
               )}
               <LogoutButton />
+            </div>
+            <div className="flex items-center md:hidden">
+              <MobileMenu
+                navItems={navItems}
+                isSuperadmin={isSuperadmin}
+                userEmail={user.email ?? ''}
+                userRole={profile?.role ?? null}
+              />
             </div>
           </div>
         </div>

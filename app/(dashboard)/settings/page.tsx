@@ -199,7 +199,7 @@ export default function SettingsPage() {
 
         <form onSubmit={handleRegisterOrg} className="bg-white rounded-lg shadow-md p-6 space-y-4">
           {formError && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm">
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm" role="alert">
               {formError}
             </div>
           )}
@@ -343,7 +343,7 @@ export default function SettingsPage() {
           </div>
 
           {verifyResult && verifyResult !== 'success' && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm mb-4">
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm mb-4" role="alert">
               {verifyResult}
             </div>
           )}

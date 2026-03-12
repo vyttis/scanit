@@ -17,9 +17,11 @@ interface User {
 export function AdminUsersClient({ users }: { users: User[] }) {
   const router = useRouter();
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleAction(userId: string, action: 'approve' | 'reject') {
     setLoadingId(userId);
+    setError(null);
 
     try {
       const res = await fetch('/api/admin/users', {
@@ -30,9 +32,12 @@ export function AdminUsersClient({ users }: { users: User[] }) {
 
       if (res.ok) {
         router.refresh();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || 'Klaida atliekant veiksmą. Bandykite dar kartą.');
       }
-    } catch (err) {
-      console.error('Action error:', err);
+    } catch {
+      setError('Tinklo klaida. Bandykite dar kartą.');
     }
 
     setLoadingId(null);
@@ -63,12 +68,18 @@ export function AdminUsersClient({ users }: { users: User[] }) {
     <div>
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Vartotojų valdymas</h1>
 
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm mb-6" role="alert">
+          {error}
+        </div>
+      )}
+
       {pendingUsers.length > 0 && (
         <div className="mb-8">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">
             Laukiantys patvirtinimo ({pendingUsers.length})
           </h2>
-          <div className="bg-white shadow overflow-hidden rounded-lg">
+          <div className="bg-white shadow overflow-hidden rounded-lg overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
@@ -125,7 +136,7 @@ export function AdminUsersClient({ users }: { users: User[] }) {
       {otherUsers.length > 0 && (
         <div>
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Visi vartotojai</h2>
-          <div className="bg-white shadow overflow-hidden rounded-lg">
+          <div className="bg-white shadow overflow-hidden rounded-lg overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>

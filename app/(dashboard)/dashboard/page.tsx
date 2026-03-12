@@ -112,12 +112,12 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <h1 className="text-2xl font-bold text-gray-900">Valdymo skydelis</h1>
-        <div className="flex items-center space-x-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:space-x-4">
           <div className="flex items-center space-x-2">
             <span className="text-sm text-gray-500">{org.name}</span>
-            <span className={`inline-block w-3 h-3 rounded-full ${org.verified ? 'bg-green-500' : 'bg-yellow-500'}`} />
+            <span className={`inline-block w-3 h-3 rounded-full ${org.verified ? 'bg-green-500' : 'bg-yellow-500'}`} aria-hidden="true" />
             <span className="text-xs text-gray-400">
               {org.verified ? 'Domenas patvirtintas' : 'Domenas nepatvirtintas'}
             </span>
