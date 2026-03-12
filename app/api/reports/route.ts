@@ -1,0 +1,183 @@
+import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
+import { NextResponse } from 'next/server';
+import { generateReport } from '@/lib/report/generator';
+
+/**
+ * POST /api/reports — Generate a report for a completed scan.
+ * Body: { scan_id: string }
+ */
+export async function POST(request: Request) {
+  const supabase = createServerSupabaseClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: 'Neautorizuota.' }, { status: 401 });
+  }
+
+  // Get user's profile and org
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('org_id, role')
+    .eq('id', user.id)
+    .single();
+
+  if (!profile?.org_id) {
+    return NextResponse.json({ error: 'Organizacija nerasta.' }, { status: 404 });
+  }
+
+  let body: { scan_id?: string };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Netinkama užklausa.' }, { status: 400 });
+  }
+
+  const scanId = body.scan_id;
+  if (!scanId || typeof scanId !== 'string') {
+    return NextResponse.json({ error: 'scan_id privalomas.' }, { status: 400 });
+  }
+
+  // Verify scan belongs to user's organization (RLS enforced via user client)
+  const { data: scan } = await supabase
+    .from('scans')
+    .select('id, org_id, status')
+    .eq('id', scanId)
+    .single();
+
+  if (!scan) {
+    return NextResponse.json({ error: 'Skenavimas nerastas.' }, { status: 404 });
+  }
+
+  if (scan.status !== 'completed') {
+    return NextResponse.json(
+      { error: 'Ataskaita gali būti generuojama tik baigtiems skenavimams.' },
+      { status: 400 },
+    );
+  }
+
+  // Check if report already exists for this scan
+  const serviceClient = createServiceRoleClient();
+  const { data: existingReport } = await serviceClient
+    .from('reports')
+    .select('id, pdf_path')
+    .eq('scan_id', scanId)
+    .single();
+
+  if (existingReport?.pdf_path) {
+    // Return existing report's signed URL
+    const { data: signedUrlData } = await serviceClient.storage
+      .from('reports')
+      .createSignedUrl(existingReport.pdf_path, 3600);
+
+    if (signedUrlData?.signedUrl) {
+      // Audit log: report downloaded
+      const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+        request.headers.get('x-real-ip') || 'unknown';
+
+      await serviceClient.from('audit_log').insert({
+        org_id: profile.org_id,
+        user_id: user.id,
+        action: 'report_downloaded',
+        details: { report_id: existingReport.id, scan_id: scanId },
+        ip_address: ip,
+      });
+
+      return NextResponse.json({
+        report_id: existingReport.id,
+        signed_url: signedUrlData.signedUrl,
+        message: 'Ataskaita jau sugeneruota.',
+      });
+    }
+  }
+
+  try {
+    const result = await generateReport(scanId);
+
+    // Audit log: report generated
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+      request.headers.get('x-real-ip') || 'unknown';
+
+    await serviceClient.from('audit_log').insert({
+      org_id: profile.org_id,
+      user_id: user.id,
+      action: 'report_generated',
+      details: { report_id: result.reportId, scan_id: scanId, risk_score: result.riskScore },
+      ip_address: ip,
+    });
+
+    return NextResponse.json({
+      report_id: result.reportId,
+      signed_url: result.signedUrl,
+      risk_score: result.riskScore,
+      message: 'Ataskaita sėkmingai sugeneruota.',
+    });
+  } catch (err) {
+    console.error('Report generation failed:', err);
+    return NextResponse.json(
+      { error: 'Klaida generuojant ataskaitą. Bandykite dar kartą.' },
+      { status: 500 },
+    );
+  }
+}
+
+/**
+ * GET /api/reports?scan_id=xxx — Get signed URL for an existing report.
+ */
+export async function GET(request: Request) {
+  const supabase = createServerSupabaseClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: 'Neautorizuota.' }, { status: 401 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const scanId = searchParams.get('scan_id');
+
+  if (!scanId) {
+    return NextResponse.json({ error: 'scan_id parametras privalomas.' }, { status: 400 });
+  }
+
+  // RLS ensures user can only access their own org's data
+  const { data: report } = await supabase
+    .from('reports')
+    .select('id, scan_id, org_id, pdf_path, risk_score, critical_count, high_count, medium_count, low_count, created_at')
+    .eq('scan_id', scanId)
+    .single();
+
+  if (!report || !report.pdf_path) {
+    return NextResponse.json({ error: 'Ataskaita nerasta.' }, { status: 404 });
+  }
+
+  const serviceClient = createServiceRoleClient();
+  const { data: signedUrlData, error: signedUrlError } = await serviceClient.storage
+    .from('reports')
+    .createSignedUrl(report.pdf_path, 3600);
+
+  if (signedUrlError || !signedUrlData?.signedUrl) {
+    return NextResponse.json({ error: 'Klaida generuojant atsisiuntimo nuorodą.' }, { status: 500 });
+  }
+
+  // Audit log: report downloaded
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    request.headers.get('x-real-ip') || 'unknown';
+
+  await serviceClient.from('audit_log').insert({
+    org_id: report.org_id,
+    user_id: user.id,
+    action: 'report_downloaded',
+    details: { report_id: report.id, scan_id: scanId },
+    ip_address: ip,
+  });
+
+  return NextResponse.json({
+    report_id: report.id,
+    signed_url: signedUrlData.signedUrl,
+    risk_score: report.risk_score,
+    critical_count: report.critical_count,
+    high_count: report.high_count,
+    medium_count: report.medium_count,
+    low_count: report.low_count,
+    created_at: report.created_at,
+  });
+}
