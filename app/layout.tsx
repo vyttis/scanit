@@ -14,7 +14,7 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "pentester.lt — Išorinio atakos paviršiaus skenavimas",
+  title: "scanit.lt — Išorinio atakos paviršiaus skenavimas",
   description: "Kibernetinio saugumo platforma lietuviškoms organizacijoms, atitinkanti KSĮ ir NIS2 reikalavimus",
 };
 

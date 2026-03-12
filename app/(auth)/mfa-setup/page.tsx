@@ -18,7 +18,7 @@ export default function MfaSetupPage() {
     async function enrollMFA() {
       const { data, error } = await supabase.auth.mfa.enroll({
         factorType: 'totp',
-        friendlyName: 'pentester.lt',
+        friendlyName: 'scanit.lt',
       });
 
       if (error) {

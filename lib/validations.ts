@@ -21,7 +21,7 @@ export function isValidEmail(email: string): boolean {
 
 export function generateVerificationToken(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let token = 'pentester-lt-verify=';
+  let token = 'scanit-lt-verify=';
   for (let i = 0; i < 32; i++) {
     token += chars.charAt(Math.floor(Math.random() * chars.length));
   }

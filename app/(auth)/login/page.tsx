@@ -66,7 +66,7 @@ export default function LoginPage() {
       <div className="max-w-md w-full space-y-8 p-8 bg-white rounded-lg shadow-md">
         <div>
           <h1 className="text-2xl font-bold text-center text-gray-900">
-            pentester.lt
+            scanit.lt
           </h1>
           <h2 className="mt-2 text-center text-lg text-gray-600">
             Prisijungimas prie platformos

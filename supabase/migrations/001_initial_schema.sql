@@ -1,4 +1,4 @@
--- pentester.lt — Initial database schema
+-- scanit.lt — Initial database schema
 -- All tables with Row Level Security (RLS) enabled from the start
 
 -- ============================================================

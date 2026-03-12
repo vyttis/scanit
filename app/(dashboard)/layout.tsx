@@ -37,7 +37,7 @@ export default async function DashboardLayout({
           <div className="flex justify-between h-16">
             <div className="flex items-center space-x-8">
               <Link href="/dashboard" className="text-xl font-bold text-gray-900">
-                pentester.lt
+                scanit.lt
               </Link>
               <Link
                 href="/dashboard"

@@ -19,7 +19,7 @@ export default async function DashboardPage() {
       <div className="max-w-2xl mx-auto mt-8">
         <div className="bg-white rounded-lg shadow-md p-8 text-center">
           <h1 className="text-2xl font-bold text-gray-900 mb-4">
-            Sveiki atvykę į pentester.lt
+            Sveiki atvykę į scanit.lt
           </h1>
           <p className="text-gray-600 mb-6">
             Norėdami pradėti naudotis platforma, pirmiausia turite užregistruoti
@@ -165,7 +165,7 @@ export default async function DashboardPage() {
         <p className="text-sm text-blue-800">
           Pagal Kibernetinio saugumo reikalavimų aprašo 45.8 punktą, organizacijos privalo
           atlikti pažeidžiamumų skenavimą ne rečiau kaip kartą per 6 mėnesius.
-          pentester.lt atlieka skenavimą kas mėnesį — automatiškai viršijant įstatymo reikalavimą.
+          scanit.lt atlieka skenavimą kas mėnesį — automatiškai viršijant įstatymo reikalavimą.
         </p>
       </div>
     </div>
