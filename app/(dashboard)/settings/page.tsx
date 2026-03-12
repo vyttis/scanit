@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { isValidDomain, sanitizeDomain, isValidEmail } from '@/lib/validations';
 import type { Organization, OrganizationSector } from '@/types/database';
+import Link from 'next/link';
 
 const SECTORS: { value: OrganizationSector; label: string }[] = [
   { value: 'energetika', label: 'Energetika' },
@@ -26,6 +27,7 @@ export default function SettingsPage() {
   const [org, setOrg] = useState<Organization | null>(null);
   const [hasOrg, setHasOrg] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
+  const [userRole, setUserRole] = useState<string | null>(null);
 
   // Registration form
   const [orgName, setOrgName] = useState('');
@@ -39,15 +41,22 @@ export default function SettingsPage() {
   const [verifyLoading, setVerifyLoading] = useState(false);
   const [verifyResult, setVerifyResult] = useState<string | null>(null);
 
+  // Contact email update
+  const [editEmail, setEditEmail] = useState('');
+  const [emailSaving, setEmailSaving] = useState(false);
+  const [emailMessage, setEmailMessage] = useState<string | null>(null);
+
   const loadData = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('org_id')
+      .select('org_id, role')
       .eq('id', user.id)
       .single();
+
+    setUserRole(profile?.role ?? null);
 
     if (!profile?.org_id) {
       setHasOrg(false);
@@ -63,6 +72,7 @@ export default function SettingsPage() {
 
     if (orgData) {
       setOrg(orgData as Organization);
+      setEditEmail(orgData.contact_email);
       setHasOrg(true);
     } else {
       setHasOrg(false);
@@ -99,7 +109,6 @@ export default function SettingsPage() {
       return;
     }
 
-    // Call server-side API to register org (generates verification token securely)
     const response = await fetch('/api/verify-domain', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -131,9 +140,7 @@ export default function SettingsPage() {
     const response = await fetch('/api/verify-domain', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'verify',
-      }),
+      body: JSON.stringify({ action: 'verify' }),
     });
 
     const result = await response.json();
@@ -146,6 +153,32 @@ export default function SettingsPage() {
     }
 
     setVerifyLoading(false);
+  }
+
+  async function handleUpdateEmail(e: React.FormEvent) {
+    e.preventDefault();
+    if (!org) return;
+    setEmailSaving(true);
+    setEmailMessage(null);
+
+    if (!isValidEmail(editEmail)) {
+      setEmailMessage('Neteisingas el. pašto formatas.');
+      setEmailSaving(false);
+      return;
+    }
+
+    const { error } = await supabase
+      .from('organizations')
+      .update({ contact_email: editEmail.trim() })
+      .eq('id', org.id);
+
+    if (error) {
+      setEmailMessage('Klaida atnaujinant el. paštą.');
+    } else {
+      setEmailMessage('El. paštas sėkmingai atnaujintas.');
+      setOrg({ ...org, contact_email: editEmail.trim() });
+    }
+    setEmailSaving(false);
   }
 
   if (loading) {
@@ -259,11 +292,7 @@ export default function SettingsPage() {
           </div>
           <div className="flex justify-between">
             <dt className="text-sm text-gray-500">Domenas</dt>
-            <dd className="text-sm text-gray-900">{org?.domain}</dd>
-          </div>
-          <div className="flex justify-between">
-            <dt className="text-sm text-gray-500">Kontaktinis el. paštas</dt>
-            <dd className="text-sm text-gray-900">{org?.contact_email}</dd>
+            <dd className="text-sm text-gray-900 font-mono">{org?.domain}</dd>
           </div>
           <div className="flex justify-between">
             <dt className="text-sm text-gray-500">Domeno būsena</dt>
@@ -271,24 +300,37 @@ export default function SettingsPage() {
               {org?.verified ? 'Patvirtintas' : 'Nepatvirtintas'}
             </dd>
           </div>
+          <div className="flex justify-between">
+            <dt className="text-sm text-gray-500">KSĮ sektorius</dt>
+            <dd className="text-sm text-gray-900">
+              {org?.sector ? SECTORS.find((s) => s.value === org.sector)?.label ?? org.sector : '—'}
+            </dd>
+          </div>
         </dl>
       </div>
 
-      {/* Domain verification */}
-      {org && !org.verified && (
+      {/* DNS verification token — always visible for reference */}
+      {org?.verification_token && (
         <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">Domeno patvirtinimas</h2>
-          <p className="text-sm text-gray-600 mb-4">
-            Norėdami patvirtinti domeno nuosavybę, pridėkite šį DNS TXT įrašą prie savo domeno:
+          <h2 className="text-lg font-medium text-gray-900 mb-3">DNS patvirtinimo žetonas</h2>
+          <p className="text-sm text-gray-600 mb-3">
+            {org.verified
+              ? 'Domenas patvirtintas. Žetonas rodomas informaciniais tikslais.'
+              : 'Pridėkite šį DNS TXT įrašą prie savo domeno, kad patvirtintumėte nuosavybę.'}
           </p>
-
-          <div className="bg-gray-50 border border-gray-200 rounded-md p-4 mb-4">
-            <p className="text-xs text-gray-500 mb-1">DNS TXT įrašas:</p>
-            <code className="text-sm font-mono text-gray-900 break-all">
+          <div className="bg-gray-50 border border-gray-200 rounded-md p-4">
+            <p className="text-xs text-gray-500 mb-1">DNS TXT įrašo reikšmė:</p>
+            <code className="text-sm font-mono text-gray-900 break-all select-all">
               {org.verification_token}
             </code>
           </div>
+        </div>
+      )}
 
+      {/* Domain verification action */}
+      {org && !org.verified && (
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-lg font-medium text-gray-900 mb-4">Domeno patvirtinimas</h2>
           <div className="bg-blue-50 border border-blue-200 rounded-md p-4 mb-4 text-sm text-blue-800">
             <p className="font-medium mb-2">Instrukcijos:</p>
             <ol className="list-decimal list-inside space-y-1">
@@ -327,6 +369,50 @@ export default function SettingsPage() {
           <p className="text-sm text-green-800">
             Domenas <strong>{org.domain}</strong> patvirtintas. Galite pradėti skenavimą iš valdymo skydelio.
           </p>
+        </div>
+      )}
+
+      {/* Contact email update */}
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <h2 className="text-lg font-medium text-gray-900 mb-4">Kontaktinis el. paštas</h2>
+        <form onSubmit={handleUpdateEmail} className="space-y-3">
+          <div>
+            <input
+              type="email"
+              required
+              value={editEmail}
+              onChange={(e) => { setEditEmail(e.target.value); setEmailMessage(null); }}
+              className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+            />
+          </div>
+          {emailMessage && (
+            <p className={`text-sm ${emailMessage.includes('sėkmingai') ? 'text-green-600' : 'text-red-600'}`}>
+              {emailMessage}
+            </p>
+          )}
+          <button
+            type="submit"
+            disabled={emailSaving || editEmail === org?.contact_email}
+            className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {emailSaving ? 'Saugoma...' : 'Atnaujinti el. paštą'}
+          </button>
+        </form>
+      </div>
+
+      {/* Audit log link — admin only */}
+      {userRole === 'admin' && (
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-lg font-medium text-gray-900 mb-2">Audito žurnalas</h2>
+          <p className="text-sm text-gray-600 mb-4">
+            Peržiūrėkite visus sistemos veiksmus: prisijungimus, skenavimus, ataskaitų atsisiuntimus.
+          </p>
+          <Link
+            href="/settings/audit"
+            className="inline-block px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-200"
+          >
+            Peržiūrėti audito žurnalą
+          </Link>
         </div>
       )}
     </div>
