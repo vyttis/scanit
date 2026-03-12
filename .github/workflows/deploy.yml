@@ -28,9 +28,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install CLIs
-        run: |
-          npm install -g supabase@latest vercel@latest
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
 
       # ── Step 1: Create Supabase project ──
       - name: Get Supabase org ID
