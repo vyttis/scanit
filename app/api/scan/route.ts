@@ -3,6 +3,10 @@ import { NextResponse } from 'next/server';
 import { runAllScanners } from '@/lib/scanners';
 import { generateReport } from '@/lib/report/generator';
 import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
+import { sendEmail } from '@/lib/email/send';
+import { scanStartedHtml } from '@/lib/email/templates/scan-started';
+import { scanCompletedHtml } from '@/lib/email/templates/scan-completed';
+import { criticalFindingsHtml } from '@/lib/email/templates/critical-findings';
 
 export async function POST(request: Request) {
   const supabase = createServerSupabaseClient();
@@ -102,8 +106,28 @@ export async function POST(request: Request) {
     ip_address: ip,
   });
 
+  // Get user profile info for email notifications
+  const { data: userProfile } = await serviceClient
+    .from('profiles')
+    .select('first_name')
+    .eq('id', user.id)
+    .single();
+
+  // Send scan-started email (fire-and-forget)
+  const scanDate = new Date().toLocaleString('lt-LT', { timeZone: 'Europe/Vilnius' });
+  sendEmail({
+    to: org.contact_email,
+    subject: `scanit.lt — Skenavimas pradėtas (${org.domain})`,
+    html: scanStartedHtml({
+      firstName: userProfile?.first_name || 'Vartotojau',
+      organizationName: org.name,
+      domain: org.domain,
+      scanDate,
+    }),
+  }).catch((err) => console.error('Scan started email error:', err));
+
   // Start scan in background (don't await in response)
-  executeScan(serviceClient, scan.id, org.id, org.domain).catch((err) => {
+  executeScan(serviceClient, scan.id, org.id, org.domain, org.name, org.contact_email, userProfile?.first_name || 'Vartotojau').catch((err) => {
     console.error(`Scan ${scan.id} background execution error:`, err);
   });
 
@@ -123,6 +147,9 @@ async function executeScan(
   scanId: string,
   orgId: string,
   domain: string,
+  orgName: string,
+  contactEmail: string,
+  firstName: string,
 ) {
   // Update scan status to running
   await serviceClient
@@ -176,12 +203,61 @@ async function executeScan(
       .eq('id', scanId);
 
     // Auto-generate report after successful scan
+    let riskScore = 0;
+    let criticalCount = 0;
+    let highCount = 0;
+    let mediumCount = 0;
+    let lowCount = 0;
+
     try {
-      await generateReport(scanId);
-      console.log(`Report generated for scan ${scanId}`);
+      const reportResult = await generateReport(scanId);
+      riskScore = reportResult.riskScore;
     } catch (reportErr) {
       // Report generation failure should not mark the scan as failed
       console.error(`Report generation failed for scan ${scanId}:`, reportErr);
+    }
+
+    // Count findings for email
+    criticalCount = allFindings.filter(f => f.severity === 'critical').length;
+    highCount = allFindings.filter(f => f.severity === 'high').length;
+    mediumCount = allFindings.filter(f => f.severity === 'medium').length;
+    lowCount = allFindings.filter(f => f.severity === 'low').length;
+
+    // Send scan-completed email
+    const completedDate = new Date().toLocaleString('lt-LT', { timeZone: 'Europe/Vilnius' });
+    sendEmail({
+      to: contactEmail,
+      subject: `scanit.lt — Skenavimas baigtas (${domain})`,
+      html: scanCompletedHtml({
+        firstName,
+        organizationName: orgName,
+        domain,
+        scanDate: completedDate,
+        riskScore,
+        criticalCount,
+        highCount,
+        mediumCount,
+        lowCount,
+      }),
+    }).catch((err) => console.error('Scan completed email error:', err));
+
+    // Send critical findings alert if any
+    if (criticalCount > 0) {
+      const criticalFindings = allFindings
+        .filter(f => f.severity === 'critical')
+        .map(f => ({ title: f.title_lt, module: f.module }));
+
+      sendEmail({
+        to: contactEmail,
+        subject: `scanit.lt — Rasta ${criticalCount} kritinių pažeidžiamumų (${domain})`,
+        html: criticalFindingsHtml({
+          firstName,
+          organizationName: orgName,
+          domain,
+          criticalCount,
+          findings: criticalFindings,
+        }),
+      }).catch((err) => console.error('Critical findings email error:', err));
     }
   } catch (err) {
     // Mark scan as failed — never expose raw error to frontend
