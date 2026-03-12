@@ -1,6 +1,7 @@
 import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 import { runAllScanners } from '@/lib/scanners';
+import { generateReport } from '@/lib/report/generator';
 
 export async function POST(request: Request) {
   const supabase = createServerSupabaseClient();
@@ -163,6 +164,15 @@ async function executeScan(
       .from('scans')
       .update({ status: 'completed', completed_at: new Date().toISOString() })
       .eq('id', scanId);
+
+    // Auto-generate report after successful scan
+    try {
+      await generateReport(scanId);
+      console.log(`Report generated for scan ${scanId}`);
+    } catch (reportErr) {
+      // Report generation failure should not mark the scan as failed
+      console.error(`Report generation failed for scan ${scanId}:`, reportErr);
+    }
   } catch (err) {
     // Mark scan as failed — never expose raw error to frontend
     console.error(`Scan ${scanId} failed:`, err);
