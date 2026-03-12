@@ -3,6 +3,8 @@ import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supab
 import { sendEmail } from '@/lib/email/send';
 import { registrationApprovedHtml } from '@/lib/email/templates/registration-approved';
 import { registrationRejectedHtml } from '@/lib/email/templates/registration-rejected';
+import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
+import { isValidUuid } from '@/lib/validations';
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,6 +13,15 @@ export async function POST(request: NextRequest) {
 
     if (!user) {
       return NextResponse.json({ error: 'Neautorizuotas.' }, { status: 401 });
+    }
+
+    // Rate limiting
+    const rateResult = checkRateLimit(`admin-users:${user.id}`);
+    if (!rateResult.allowed) {
+      return NextResponse.json(
+        { error: 'Per daug užklausų. Palaukite minutę.' },
+        { status: 429, headers: rateLimitHeaders(rateResult) },
+      );
     }
 
     const serviceClient = createServiceRoleClient();
@@ -28,7 +39,11 @@ export async function POST(request: NextRequest) {
 
     const { userId, action } = await request.json();
 
-    if (!userId || !['approve', 'reject'].includes(action)) {
+    if (!userId || typeof userId !== 'string' || !isValidUuid(userId)) {
+      return NextResponse.json({ error: 'Netinkamas vartotojo ID formatas.' }, { status: 400 });
+    }
+
+    if (!['approve', 'reject'].includes(action)) {
       return NextResponse.json({ error: 'Neteisingi parametrai.' }, { status: 400 });
     }
 
@@ -80,6 +95,17 @@ export async function POST(request: NextRequest) {
         console.error('Email sending error:', emailError);
       }
     }
+
+    // Audit log: admin approval/rejection
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+      request.headers.get('x-real-ip') || 'unknown';
+    await serviceClient.from('audit_log').insert({
+      org_id: null,
+      user_id: user.id,
+      action: action === 'approve' ? 'user_approved' : 'user_rejected',
+      details: { target_user_id: userId, target_email: userEmail || null },
+      ip_address: ip,
+    });
 
     return NextResponse.json({ success: true });
   } catch (err) {

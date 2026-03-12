@@ -1,7 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
 
 export async function POST(request: NextRequest) {
+  // Rate limiting by IP to prevent token brute-force
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    request.headers.get('x-real-ip') || 'unknown';
+  const rateResult = checkRateLimit(`password-confirm:${ip}`);
+  if (!rateResult.allowed) {
+    return NextResponse.json(
+      { error: 'Per daug užklausų. Palaukite minutę ir bandykite dar kartą.' },
+      { status: 429, headers: rateLimitHeaders(rateResult) },
+    );
+  }
+
   try {
     const { token, password } = await request.json();
 

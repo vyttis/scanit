@@ -4,6 +4,7 @@ import { isValidEmail, isValidDomain } from '@/lib/validations';
 import { sendEmail } from '@/lib/email/send';
 import { registrationPendingHtml } from '@/lib/email/templates/registration-pending';
 import { adminNewUserHtml } from '@/lib/email/templates/admin-new-user';
+import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
 
 const BLOCKED_DOMAINS = [
   'gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com',
@@ -12,6 +13,17 @@ const BLOCKED_DOMAINS = [
 ];
 
 export async function POST(request: NextRequest) {
+  // Rate limiting by IP to prevent registration spam
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    request.headers.get('x-real-ip') || 'unknown';
+  const rateResult = checkRateLimit(`register:${ip}`);
+  if (!rateResult.allowed) {
+    return NextResponse.json(
+      { error: 'Per daug užklausų. Palaukite minutę ir bandykite dar kartą.' },
+      { status: 429, headers: rateLimitHeaders(rateResult) },
+    );
+  }
+
   try {
     const body = await request.json();
     const { firstName, lastName, email, orgName, orgWebsite, password } = body;

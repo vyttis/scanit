@@ -34,6 +34,9 @@ function LoginForm() {
 
     // Check if MFA is required
     if (data.session && data.user) {
+      // Log successful login (fire-and-forget)
+      fetch('/api/auth/audit-login', { method: 'POST' }).catch(() => {});
+
       const { data: factors } = await supabase.auth.mfa.listFactors();
       const totp = factors?.totp ?? [];
 
