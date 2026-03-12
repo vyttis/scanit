@@ -1,4 +1,5 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { ReportDownloadButton } from '@/components/report-download-button';
 
 export default async function ReportsPage() {
   const supabase = createServerSupabaseClient();
@@ -61,14 +62,10 @@ export default async function ReportsPage() {
                     </div>
                   </div>
                 </div>
-                {report.pdf_path && (
-                  <a
-                    href={`/api/reports?id=${report.id}`}
-                    className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700"
-                  >
-                    Atsisiųsti PDF
-                  </a>
-                )}
+                <ReportDownloadButton
+                  scanId={report.scan_id}
+                  hasReport={!!report.pdf_path}
+                />
               </div>
             </div>
           ))}

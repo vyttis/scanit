@@ -58,7 +58,7 @@ function severityColor(severity: string): string {
 
 function riskColor(score: number): string {
   if (score >= 70) return '#dc2626';
-  if (score >= 40) return '#ca8a04';
+  if (score >= 41) return '#ca8a04';
   return '#16a34a';
 }
 
