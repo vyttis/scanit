@@ -1,5 +1,8 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import Link from 'next/link';
+import { ScanTriggerButton } from '@/components/scan-trigger-button';
+import { FindingsList } from '@/components/findings-list';
+import type { Finding } from '@/types/database';
 
 export default async function DashboardPage() {
   const supabase = createServerSupabaseClient();
@@ -9,7 +12,7 @@ export default async function DashboardPage() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('org_id')
+    .select('org_id, role')
     .eq('id', user.id)
     .single();
 
@@ -63,15 +66,19 @@ export default async function DashboardPage() {
     .limit(1)
     .single();
 
-  // Load finding counts by severity for latest scan
-  let findingCounts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
-  if (latestScan) {
-    const { data: findings } = await supabase
-      .from('findings')
-      .select('severity')
-      .eq('scan_id', latestScan.id);
+  // Load findings for latest completed scan
+  let findings: Finding[] = [];
+  const findingCounts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
 
-    if (findings) {
+  if (latestScan && latestScan.status === 'completed') {
+    const { data: scanFindings } = await supabase
+      .from('findings')
+      .select('*')
+      .eq('scan_id', latestScan.id)
+      .order('created_at', { ascending: true });
+
+    if (scanFindings) {
+      findings = scanFindings as Finding[];
       findings.forEach((f) => {
         findingCounts[f.severity as keyof typeof findingCounts]++;
       });
@@ -85,16 +92,21 @@ export default async function DashboardPage() {
     failed: 'Nepavyko',
   };
 
+  const isActive = latestScan && (latestScan.status === 'queued' || latestScan.status === 'running');
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Valdymo skydelis</h1>
-        <div className="flex items-center space-x-2">
-          <span className="text-sm text-gray-500">{org.name}</span>
-          <span className={`inline-block w-3 h-3 rounded-full ${org.verified ? 'bg-green-500' : 'bg-yellow-500'}`} />
-          <span className="text-xs text-gray-400">
-            {org.verified ? 'Domenas patvirtintas' : 'Domenas nepatvirtintas'}
-          </span>
+        <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2">
+            <span className="text-sm text-gray-500">{org.name}</span>
+            <span className={`inline-block w-3 h-3 rounded-full ${org.verified ? 'bg-green-500' : 'bg-yellow-500'}`} />
+            <span className="text-xs text-gray-400">
+              {org.verified ? 'Domenas patvirtintas' : 'Domenas nepatvirtintas'}
+            </span>
+          </div>
+          <ScanTriggerButton orgVerified={org.verified} isAdmin={profile.role === 'admin'} />
         </div>
       </div>
 
@@ -109,7 +121,17 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      {/* Risk score card */}
+      {/* Active scan indicator */}
+      {isActive && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 animate-pulse">
+          <p className="text-sm text-blue-800">
+            Skenavimas vykdomas... Būsena: {statusLabels[latestScan.status] || latestScan.status}.
+            Puslapis automatiškai atsinaujins, kai skenavimas bus baigtas.
+          </p>
+        </div>
+      )}
+
+      {/* Summary cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white rounded-lg shadow-md p-6">
           <h2 className="text-sm font-medium text-gray-500 mb-2">Rizikos balas</h2>
@@ -134,7 +156,7 @@ export default async function DashboardPage() {
           {latestScan ? (
             <div>
               <p className="text-sm text-gray-900">
-                {new Date(latestScan.created_at).toLocaleDateString('lt-LT')}
+                {new Date(latestScan.created_at).toLocaleString('lt-LT')}
               </p>
               <p className="text-xs text-gray-500 mt-1">
                 Būsena: {statusLabels[latestScan.status] || latestScan.status}
@@ -147,18 +169,39 @@ export default async function DashboardPage() {
 
         <div className="bg-white rounded-lg shadow-md p-6">
           <h2 className="text-sm font-medium text-gray-500 mb-2">Nustatyti trūkumai</h2>
-          {latestScan ? (
-            <div className="flex space-x-3 text-sm">
-              <span className="text-red-600 font-medium">{findingCounts.critical} kritiniai</span>
-              <span className="text-orange-600 font-medium">{findingCounts.high} aukšti</span>
-              <span className="text-yellow-600 font-medium">{findingCounts.medium} vidutiniai</span>
-              <span className="text-blue-600 font-medium">{findingCounts.low} žemi</span>
+          {findings.length > 0 ? (
+            <div className="flex flex-wrap gap-2 text-sm">
+              {findingCounts.critical > 0 && (
+                <span className="text-red-600 font-medium">{findingCounts.critical} kritiniai</span>
+              )}
+              {findingCounts.high > 0 && (
+                <span className="text-orange-600 font-medium">{findingCounts.high} aukšti</span>
+              )}
+              {findingCounts.medium > 0 && (
+                <span className="text-yellow-600 font-medium">{findingCounts.medium} vidutiniai</span>
+              )}
+              {findingCounts.low > 0 && (
+                <span className="text-blue-600 font-medium">{findingCounts.low} žemi</span>
+              )}
+              {findingCounts.info > 0 && (
+                <span className="text-gray-500 font-medium">{findingCounts.info} informaciniai</span>
+              )}
             </div>
           ) : (
             <p className="text-gray-400 text-sm">Nėra duomenų</p>
           )}
         </div>
       </div>
+
+      {/* Findings list */}
+      {latestScan && latestScan.status === 'completed' && (
+        <div>
+          <h2 className="text-lg font-bold text-gray-900 mb-4">
+            Skenavimo rezultatai — {new Date(latestScan.created_at).toLocaleDateString('lt-LT')}
+          </h2>
+          <FindingsList findings={findings} />
+        </div>
+      )}
 
       {/* Legal compliance note */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
