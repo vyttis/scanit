@@ -80,6 +80,7 @@ export default function MfaSetupPage() {
 
         {qrCode && (
           <div className="flex flex-col items-center space-y-4">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={qrCode} alt="MFA QR kodas" className="w-48 h-48" />
             {secret && (
               <div className="text-center">

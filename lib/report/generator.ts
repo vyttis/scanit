@@ -1,6 +1,6 @@
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { generateExecutiveSummary, generateFindingDescription } from '@/lib/claude/generate-finding-text';
-import type { Finding, Report } from '@/types/database';
+import type { Finding } from '@/types/database';
 
 // ---------------------------------------------------------------------------
 // Risk scoring
