@@ -18,12 +18,12 @@ export function RiskScoreBadge({ score, size = 'lg' }: RiskScoreBadgeProps) {
     'text-green-600 border-green-400';
 
   const bgColor = score >= 70 ? 'bg-red-50' :
-    score >= 41 ? 'text-yellow-50' :
+    score >= 41 ? 'bg-yellow-50' :
     'bg-green-50';
 
-  const label = score >= 70 ? 'Kritinis' :
-    score >= 41 ? 'Vidutinis' :
-    'Saugus';
+  const label = score >= 70 ? 'Aukšta rizika' :
+    score >= 41 ? 'Vidutinė rizika' :
+    'Žema rizika';
 
   const dimensions = size === 'lg'
     ? 'w-28 h-28 text-4xl border-[6px]'

@@ -28,7 +28,7 @@ export default async function ReportsPage() {
   const riskColor = (score: number | null) => {
     if (score === null) return 'text-gray-400';
     if (score >= 70) return 'text-red-600';
-    if (score >= 40) return 'text-yellow-600';
+    if (score >= 41) return 'text-yellow-600';
     return 'text-green-600';
   };
 

@@ -2,6 +2,7 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { LogoutButton } from '@/components/logout-button';
+import { NavLink } from '@/components/nav-link';
 
 export default async function DashboardLayout({
   children,
@@ -41,37 +42,25 @@ export default async function DashboardLayout({
               <Link href="/dashboard" className="text-xl font-bold text-gray-900">
                 scanit.lt
               </Link>
-              <Link
-                href="/dashboard"
-                className="text-sm text-gray-600 hover:text-gray-900"
-              >
+              <NavLink href="/dashboard">
                 Valdymo skydelis
-              </Link>
-              <Link
-                href="/scans"
-                className="text-sm text-gray-600 hover:text-gray-900"
-              >
+              </NavLink>
+              <NavLink href="/scans">
                 Skenavimai
-              </Link>
-              <Link
-                href="/reports"
-                className="text-sm text-gray-600 hover:text-gray-900"
-              >
+              </NavLink>
+              <NavLink href="/reports">
                 Ataskaitos
-              </Link>
-              <Link
-                href="/settings"
-                className="text-sm text-gray-600 hover:text-gray-900"
-              >
+              </NavLink>
+              <NavLink href="/settings">
                 Nustatymai
-              </Link>
+              </NavLink>
               {isSuperadmin && (
-                <Link
+                <NavLink
                   href="/admin/vartotojai"
                   className="text-sm text-purple-600 hover:text-purple-900 font-medium"
                 >
                   Vartotojai
-                </Link>
+                </NavLink>
               )}
             </div>
             <div className="flex items-center space-x-4">
