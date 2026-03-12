@@ -296,7 +296,7 @@ export default function SettingsPage() {
               <li>Pridėkite naują TXT įrašą savo domenui ({org.domain})</li>
               <li>Įrašo reikšmė: <code className="bg-blue-100 px-1 rounded">{org.verification_token}</code></li>
               <li>Palaukite kol DNS pakeitimai įsigalios (iki 24 val.)</li>
-              <li>Spauskite mygtuką „Tikrinti domeną"</li>
+              <li>Spauskite mygtuką &ldquo;Tikrinti domeną&rdquo;</li>
             </ol>
           </div>
 

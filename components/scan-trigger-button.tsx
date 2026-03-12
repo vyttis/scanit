@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { createClient } from '@/lib/supabase/client';
 
 interface ScanTriggerButtonProps {
   orgVerified: boolean;
