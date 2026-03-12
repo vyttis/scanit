@@ -1,4 +1,4 @@
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { ReportDownloadButton } from '@/components/report-download-button';
 
 export default async function ScansPage() {
@@ -8,11 +8,13 @@ export default async function ScansPage() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('org_id')
+    .select('org_id, role')
     .eq('id', user.id)
     .single();
 
-  if (!profile?.org_id) {
+  const isSuperadmin = profile?.role === 'superadmin';
+
+  if (!isSuperadmin && !profile?.org_id) {
     return (
       <div className="text-center py-12">
         <p className="text-gray-500">Pirmiausia užregistruokite organizaciją nustatymuose.</p>
@@ -20,17 +22,25 @@ export default async function ScansPage() {
     );
   }
 
-  const { data: scans } = await supabase
-    .from('scans')
-    .select('*')
-    .eq('org_id', profile.org_id)
-    .order('created_at', { ascending: false });
+  // Superadmin sees all scans; regular users see only their org's scans
+  const client = isSuperadmin ? createServiceRoleClient() : supabase;
 
-  // Load all reports for this org to map scan_id -> report
-  const { data: reports } = await supabase
+  let scansQuery = client
+    .from('scans')
+    .select('*, organizations(name)')
+    .order('created_at', { ascending: false });
+  if (!isSuperadmin) {
+    scansQuery = scansQuery.eq('org_id', profile!.org_id!);
+  }
+  const { data: scans } = await scansQuery;
+
+  let reportsQuery = client
     .from('reports')
-    .select('id, scan_id, risk_score, critical_count, high_count, medium_count, low_count, pdf_path')
-    .eq('org_id', profile.org_id);
+    .select('id, scan_id, risk_score, critical_count, high_count, medium_count, low_count, pdf_path');
+  if (!isSuperadmin) {
+    reportsQuery = reportsQuery.eq('org_id', profile!.org_id!);
+  }
+  const { data: reports } = await reportsQuery;
 
   const reportByScanId = new Map(
     (reports ?? []).map((r) => [r.scan_id, r]),
@@ -70,6 +80,9 @@ export default async function ScansPage() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
+                {isSuperadmin && (
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Organizacija</th>
+                )}
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Data</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tipas</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Būsena</th>
@@ -84,6 +97,13 @@ export default async function ScansPage() {
                 const report = reportByScanId.get(scan.id);
                 return (
                   <tr key={scan.id} className="hover:bg-gray-50">
+                    {isSuperadmin && (
+                      <td className="px-6 py-4 text-sm text-gray-900 font-medium">
+                        {(scan as Record<string, unknown>).organizations
+                          ? ((scan as Record<string, unknown>).organizations as { name: string }).name
+                          : '—'}
+                      </td>
+                    )}
                     <td className="px-6 py-4 text-sm text-gray-900">
                       {new Date(scan.created_at).toLocaleString('lt-LT')}
                     </td>

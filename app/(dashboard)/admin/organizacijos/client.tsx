@@ -59,6 +59,8 @@ export function AdminOrganizationsClient({ organizations }: { organizations: Org
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [suspendingId, setSuspendingId] = useState<string | null>(null);
   const [confirmSuspendId, setConfirmSuspendId] = useState<string | null>(null);
+  const [scanningId, setScanningId] = useState<string | null>(null);
+  const [scanMessage, setScanMessage] = useState<{ orgId: string; text: string; type: 'success' | 'error' } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const filteredOrgs = useMemo(() => {
@@ -98,6 +100,31 @@ export function AdminOrganizationsClient({ organizations }: { organizations: Org
     }
 
     setSuspendingId(null);
+  }
+
+  async function handleScan(orgId: string) {
+    setScanningId(orgId);
+    setScanMessage(null);
+
+    try {
+      const res = await fetch('/api/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ org_id: orgId }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setScanMessage({ orgId, text: 'Skenavimas pradėtas.', type: 'success' });
+        router.refresh();
+      } else {
+        setScanMessage({ orgId, text: data.error || 'Klaida paleidžiant skenavimą.', type: 'error' });
+      }
+    } catch {
+      setScanMessage({ orgId, text: 'Tinklo klaida.', type: 'error' });
+    }
+
+    setScanningId(null);
   }
 
   return (
@@ -184,6 +211,9 @@ export function AdminOrganizationsClient({ organizations }: { organizations: Org
                 onCancelSuspend={() => setConfirmSuspendId(null)}
                 onSuspend={() => handleSuspend(org.id)}
                 isSuspending={suspendingId === org.id}
+                onScan={() => handleScan(org.id)}
+                isScanning={scanningId === org.id}
+                scanMessage={scanMessage?.orgId === org.id ? scanMessage : null}
               />
             ))}
           </tbody>
@@ -202,6 +232,9 @@ interface OrgRowProps {
   onCancelSuspend: () => void;
   onSuspend: () => void;
   isSuspending: boolean;
+  onScan: () => void;
+  isScanning: boolean;
+  scanMessage: { text: string; type: 'success' | 'error' } | null;
 }
 
 function OrgRow({
@@ -213,6 +246,9 @@ function OrgRow({
   onCancelSuspend,
   onSuspend,
   isSuspending,
+  onScan,
+  isScanning,
+  scanMessage,
 }: OrgRowProps) {
   const isConfirming = confirmSuspendId === org.id;
 
@@ -259,32 +295,48 @@ function OrgRow({
           <RiskScoreBadge score={org.latestRiskScore} />
         </td>
         <td className="px-6 py-4 whitespace-nowrap text-sm" onClick={e => e.stopPropagation()}>
-          {isConfirming ? (
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-red-600 font-medium">Tikrai sustabdyti?</span>
+          <div className="flex items-center gap-2 flex-wrap">
+            {org.verified && (
               <button
-                onClick={onSuspend}
-                disabled={isSuspending}
-                className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                onClick={onScan}
+                disabled={isScanning}
+                className="inline-flex items-center px-3 py-1.5 border border-blue-300 text-xs font-medium rounded-md text-blue-700 bg-white hover:bg-blue-50 transition-colors disabled:opacity-50"
               >
-                {isSuspending ? 'Vykdoma...' : 'Taip'}
+                {isScanning ? 'Paleidžiama...' : 'Skenuoti'}
               </button>
+            )}
+            {scanMessage && (
+              <span className={`text-xs ${scanMessage.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+                {scanMessage.text}
+              </span>
+            )}
+            {isConfirming ? (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-red-600 font-medium">Tikrai sustabdyti?</span>
+                <button
+                  onClick={onSuspend}
+                  disabled={isSuspending}
+                  className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                >
+                  {isSuspending ? 'Vykdoma...' : 'Taip'}
+                </button>
+                <button
+                  onClick={onCancelSuspend}
+                  disabled={isSuspending}
+                  className="inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Ne
+                </button>
+              </div>
+            ) : (
               <button
-                onClick={onCancelSuspend}
-                disabled={isSuspending}
-                className="inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                onClick={onConfirmSuspend}
+                className="inline-flex items-center px-3 py-1.5 border border-red-300 text-xs font-medium rounded-md text-red-700 bg-white hover:bg-red-50 transition-colors"
               >
-                Ne
+                Sustabdyti
               </button>
-            </div>
-          ) : (
-            <button
-              onClick={onConfirmSuspend}
-              className="inline-flex items-center px-3 py-1.5 border border-red-300 text-xs font-medium rounded-md text-red-700 bg-white hover:bg-red-50 transition-colors"
-            >
-              Sustabdyti
-            </button>
-          )}
+            )}
+          </div>
         </td>
       </tr>
 

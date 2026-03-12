@@ -1,4 +1,5 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { ScanTriggerButton } from '@/components/scan-trigger-button';
 import { FindingsList } from '@/components/findings-list';
@@ -17,6 +18,11 @@ export default async function DashboardPage() {
     .select('org_id, role')
     .eq('id', user.id)
     .single();
+
+  // Superadmin without org — redirect to admin dashboard
+  if (profile?.role === 'superadmin' && !profile?.org_id) {
+    redirect('/admin');
+  }
 
   if (!profile?.org_id) {
     return (

@@ -32,13 +32,22 @@ export async function POST(request: Request) {
     .eq('id', user.id)
     .single();
 
-  if (!profile?.org_id) {
-    return NextResponse.json({ error: 'Organizacija nerasta.' }, { status: 404 });
+  const isSuperadmin = profile?.role === 'superadmin';
+
+  // Only admins and superadmins can trigger scans
+  if (profile?.role !== 'admin' && !isSuperadmin) {
+    return NextResponse.json({ error: 'Tik administratoriai gali inicijuoti skenavimą.' }, { status: 403 });
   }
 
-  // Only admins can trigger scans
-  if (profile.role !== 'admin') {
-    return NextResponse.json({ error: 'Tik administratoriai gali inicijuoti skenavimą.' }, { status: 403 });
+  // Superadmin can scan any org by passing org_id in the request body
+  let targetOrgId = profile?.org_id;
+  if (isSuperadmin) {
+    const body = await request.clone().json().catch(() => ({}));
+    targetOrgId = body.org_id || profile?.org_id;
+  }
+
+  if (!targetOrgId) {
+    return NextResponse.json({ error: 'Organizacija nerasta. Nurodykite org_id.' }, { status: 404 });
   }
 
   const serviceClient = createServiceRoleClient();
@@ -47,7 +56,7 @@ export async function POST(request: Request) {
   const { data: org } = await serviceClient
     .from('organizations')
     .select('*')
-    .eq('id', profile.org_id)
+    .eq('id', targetOrgId)
     .single();
 
   if (!org) {

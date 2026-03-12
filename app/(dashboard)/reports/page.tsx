@@ -1,4 +1,4 @@
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { ReportDownloadButton } from '@/components/report-download-button';
 
 export default async function ReportsPage() {
@@ -8,11 +8,13 @@ export default async function ReportsPage() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('org_id')
+    .select('org_id, role')
     .eq('id', user.id)
     .single();
 
-  if (!profile?.org_id) {
+  const isSuperadmin = profile?.role === 'superadmin';
+
+  if (!isSuperadmin && !profile?.org_id) {
     return (
       <div className="text-center py-12">
         <p className="text-gray-500">Pirmiausia užregistruokite organizaciją nustatymuose.</p>
@@ -20,11 +22,16 @@ export default async function ReportsPage() {
     );
   }
 
-  const { data: reports } = await supabase
+  const client = isSuperadmin ? createServiceRoleClient() : supabase;
+
+  let reportsQuery = client
     .from('reports')
-    .select('*')
-    .eq('org_id', profile.org_id)
+    .select('*, organizations(name)')
     .order('created_at', { ascending: false });
+  if (!isSuperadmin) {
+    reportsQuery = reportsQuery.eq('org_id', profile!.org_id!);
+  }
+  const { data: reports } = await reportsQuery;
 
   const riskColor = (score: number | null) => {
     if (score === null) return 'text-gray-400';
@@ -47,6 +54,11 @@ export default async function ReportsPage() {
             <div key={report.id} className="bg-white rounded-lg shadow-md p-6">
               <div className="flex items-center justify-between">
                 <div>
+                  {isSuperadmin && (report as Record<string, unknown>).organizations ? (
+                    <p className="text-xs font-semibold text-blue-600 mb-1">
+                      {((report as Record<string, unknown>).organizations as { name: string }).name}
+                    </p>
+                  ) : null}
                   <p className="text-sm text-gray-500">
                     {new Date(report.created_at).toLocaleDateString('lt-LT')}
                   </p>

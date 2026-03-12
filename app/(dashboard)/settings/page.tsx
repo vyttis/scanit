@@ -189,6 +189,42 @@ export default function SettingsPage() {
     );
   }
 
+  // Superadmin without org — show admin-specific settings
+  if (userRole === 'superadmin' && !hasOrg) {
+    return (
+      <div className="max-w-2xl mx-auto space-y-6">
+        <h1 className="text-2xl font-bold text-gray-900">Platformos nustatymai</h1>
+
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-lg font-medium text-gray-900 mb-2">Superadministratoriaus paskyra</h2>
+          <p className="text-sm text-gray-600 mb-4">
+            Jūs esate prisijungęs kaip superadministratorius. Organizacijos registracija nereikalinga.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href="/admin"
+              className="inline-block px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700"
+            >
+              Administravimo skydelis
+            </Link>
+            <Link
+              href="/admin/organizacijos"
+              className="inline-block px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-200"
+            >
+              Valdyti organizacijas
+            </Link>
+            <Link
+              href="/admin/vartotojai"
+              className="inline-block px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-200"
+            >
+              Valdyti vartotojus
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Organization registration form
   if (!hasOrg) {
     return (
