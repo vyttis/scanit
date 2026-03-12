@@ -1,4 +1,5 @@
 import type { ScannerResult, ScannerFinding } from './types';
+import { fetchWithTimeout } from './types';
 import { resolve } from 'dns/promises';
 
 const ABUSEIPDB_API_KEY = process.env.ABUSEIPDB_API_KEY;
@@ -50,7 +51,7 @@ export async function scanAbuseipdb(domain: string): Promise<ScannerResult> {
       };
     }
 
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `https://api.abuseipdb.com/api/v2/check?ipAddress=${encodeURIComponent(ip)}&maxAgeInDays=90&verbose`,
       {
         headers: {

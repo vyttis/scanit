@@ -1,4 +1,5 @@
 import type { ScannerResult, ScannerFinding } from './types';
+import { fetchWithTimeout } from './types';
 
 const URLSCAN_API_KEY = process.env.URLSCAN_API_KEY;
 
@@ -14,7 +15,7 @@ export async function scanUrlscan(domain: string): Promise<ScannerResult> {
 
   try {
     // Search for existing scans of this domain
-    const searchRes = await fetch(
+    const searchRes = await fetchWithTimeout(
       `https://urlscan.io/api/v1/search/?q=domain:${encodeURIComponent(domain)}&size=10`,
       {
         headers: { 'API-Key': URLSCAN_API_KEY },
@@ -58,7 +59,7 @@ export async function scanUrlscan(domain: string): Promise<ScannerResult> {
     // Search for lookalike domains (typosquatting)
     const baseName = domain.split('.')[0];
     if (baseName.length >= 4) {
-      const lookalikeRes = await fetch(
+      const lookalikeRes = await fetchWithTimeout(
         `https://urlscan.io/api/v1/search/?q=domain:*${encodeURIComponent(baseName)}*%20AND%20NOT%20domain:${encodeURIComponent(domain)}&size=10`,
         {
           headers: { 'API-Key': URLSCAN_API_KEY },

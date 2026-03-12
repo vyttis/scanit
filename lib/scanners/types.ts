@@ -28,3 +28,17 @@ export interface ScannerResult {
  * Scanner function signature — every module exports this.
  */
 export type ScannerFunction = (domain: string) => Promise<ScannerResult>;
+
+/**
+ * Fetch with a timeout (default 10 seconds per CLAUDE.md §7).
+ * Wraps native fetch with AbortController.
+ */
+export function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs = 10_000,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
+}

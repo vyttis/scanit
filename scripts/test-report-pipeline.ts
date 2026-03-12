@@ -153,9 +153,12 @@ function testHtmlGeneration() {
   ];
 
   // Read the generator file and check template
-  const fs = require('fs');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fs = require('fs') as typeof import('fs');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const path = require('path') as typeof import('path');
   const generatorSource = fs.readFileSync(
-    require('path').join(__dirname, '..', 'lib', 'report', 'generator.ts'),
+    path.join(__dirname, '..', 'lib', 'report', 'generator.ts'),
     'utf-8',
   );
 

@@ -1,4 +1,5 @@
 import type { ScannerResult, ScannerFinding } from './types';
+import { fetchWithTimeout } from './types';
 
 const HIBP_API_KEY = process.env.HIBP_API_KEY;
 
@@ -13,7 +14,7 @@ export async function scanHibp(domain: string): Promise<ScannerResult> {
   }
 
   try {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `https://haveibeenpwned.com/api/v3/breaches?domain=${encodeURIComponent(domain)}`,
       {
         headers: {

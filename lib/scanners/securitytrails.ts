@@ -5,7 +5,6 @@ import type { ScannerResult } from './types';
  * Not configured for MVP. Returns empty findings without crashing.
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export async function scanSecuritytrails(domain: string): Promise<ScannerResult> {
-  console.log('SecurityTrails: not configured');
+export async function scanSecuritytrails(_domain: string): Promise<ScannerResult> {
   return { module: 'securitytrails', success: true, findings: [] };
 }

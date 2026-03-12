@@ -1,4 +1,5 @@
 import type { ScannerResult, ScannerFinding } from './types';
+import { fetchWithTimeout } from './types';
 
 const VIRUSTOTAL_API_KEY = process.env.VIRUSTOTAL_API_KEY;
 
@@ -13,7 +14,7 @@ export async function scanVirustotal(domain: string): Promise<ScannerResult> {
   }
 
   try {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `https://www.virustotal.com/api/v3/domains/${encodeURIComponent(domain)}`,
       {
         headers: { 'x-apikey': VIRUSTOTAL_API_KEY },

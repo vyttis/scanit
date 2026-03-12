@@ -1,4 +1,5 @@
 import type { ScannerResult, ScannerFinding } from './types';
+import { fetchWithTimeout } from './types';
 
 /**
  * SSL Labs scanner — checks certificate validity, expiry, cipher strength.
@@ -9,7 +10,7 @@ import type { ScannerResult, ScannerFinding } from './types';
 export async function scanSsl(domain: string): Promise<ScannerResult> {
   try {
     // Start analysis (startNew=on forces new scan, but we use fromCache=on for speed)
-    const analyzeRes = await fetch(
+    const analyzeRes = await fetchWithTimeout(
       `https://api.ssllabs.com/api/v3/analyze?host=${encodeURIComponent(domain)}&fromCache=on&maxAge=24&all=done`,
     );
 
@@ -23,7 +24,7 @@ export async function scanSsl(domain: string): Promise<ScannerResult> {
     // If analysis not ready, try polling once more
     if (data.status === 'IN_PROGRESS' || data.status === 'DNS') {
       // Start a new scan and report what we know
-      await fetch(
+      await fetchWithTimeout(
         `https://api.ssllabs.com/api/v3/analyze?host=${encodeURIComponent(domain)}&startNew=on`,
       );
 

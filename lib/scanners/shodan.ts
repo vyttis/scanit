@@ -1,4 +1,5 @@
 import type { ScannerResult, ScannerFinding } from './types';
+import { fetchWithTimeout } from './types';
 
 const SHODAN_API_KEY = process.env.SHODAN_API_KEY;
 
@@ -14,7 +15,7 @@ export async function scanShodan(domain: string): Promise<ScannerResult> {
 
   try {
     // Resolve domain to IP first via Shodan DNS
-    const dnsRes = await fetch(
+    const dnsRes = await fetchWithTimeout(
       `https://api.shodan.io/dns/resolve?hostnames=${encodeURIComponent(domain)}&key=${SHODAN_API_KEY}`,
     );
 
@@ -42,7 +43,7 @@ export async function scanShodan(domain: string): Promise<ScannerResult> {
     }
 
     // Get host info
-    const hostRes = await fetch(
+    const hostRes = await fetchWithTimeout(
       `https://api.shodan.io/shodan/host/${ip}?key=${SHODAN_API_KEY}`,
     );
 
