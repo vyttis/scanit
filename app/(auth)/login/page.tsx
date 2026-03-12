@@ -1,17 +1,20 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
-export default function LoginPage() {
+function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
+
+  const resetSuccess = searchParams.get('reset') === 'success';
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -74,6 +77,12 @@ export default function LoginPage() {
         </div>
 
         <form className="mt-8 space-y-6" onSubmit={handleLogin}>
+          {resetSuccess && (
+            <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded text-sm">
+              Slaptažodis sėkmingai pakeistas. Prisijunkite su nauju slaptažodžiu.
+            </div>
+          )}
+
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm">
               {error}
@@ -121,14 +130,28 @@ export default function LoginPage() {
             {loading ? 'Jungiamasi...' : 'Prisijungti'}
           </button>
 
-          <p className="text-center text-sm text-gray-600">
-            Neturite paskyros?{' '}
+          <div className="flex items-center justify-between text-sm">
+            <Link href="/pamirsau-slaptazodi" className="text-blue-600 hover:text-blue-500 font-medium">
+              Pamiršote slaptažodį?
+            </Link>
             <Link href="/register" className="text-blue-600 hover:text-blue-500 font-medium">
               Registruotis
             </Link>
-          </p>
+          </div>
         </form>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-gray-500">Kraunama...</div>
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   );
 }

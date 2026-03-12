@@ -26,9 +26,11 @@ export default async function DashboardLayout({
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('org_id, role')
+    .select('org_id, role, status')
     .eq('id', user.id)
     .single();
+
+  const isSuperadmin = profile?.role === 'superadmin';
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -63,12 +65,20 @@ export default async function DashboardLayout({
               >
                 Nustatymai
               </Link>
+              {isSuperadmin && (
+                <Link
+                  href="/admin/vartotojai"
+                  className="text-sm text-purple-600 hover:text-purple-900 font-medium"
+                >
+                  Vartotojai
+                </Link>
+              )}
             </div>
             <div className="flex items-center space-x-4">
               <span className="text-sm text-gray-500">{user.email}</span>
               {profile?.role && (
                 <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
-                  {profile.role === 'admin' ? 'Administratorius' : 'Stebėtojas'}
+                  {profile.role === 'superadmin' ? 'Superadminas' : profile.role === 'admin' ? 'Administratorius' : 'Stebėtojas'}
                 </span>
               )}
               <LogoutButton />

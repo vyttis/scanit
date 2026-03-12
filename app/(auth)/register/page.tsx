@@ -1,32 +1,78 @@
 'use client';
 
 import { useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
-import { isValidEmail } from '@/lib/validations';
+
+const BLOCKED_DOMAINS = [
+  'gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com',
+  'mail.ru', 'inbox.lt', 'one.lt', 'yahoo.lt', 'live.com',
+  'icloud.com', 'protonmail.com', 'yandex.ru',
+];
+
+function extractDomain(input: string): string {
+  return input
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/\/.*$/, '');
+}
 
 export default function RegisterPage() {
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
+  const [orgName, setOrgName] = useState('');
+  const [orgWebsite, setOrgWebsite] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
-  const supabase = createClient();
+
+  function validateDomains(): string | null {
+    const emailDomain = email.split('@')[1]?.toLowerCase();
+    const websiteDomain = extractDomain(orgWebsite);
+
+    if (!emailDomain || !websiteDomain) return null;
+
+    if (BLOCKED_DOMAINS.includes(emailDomain)) {
+      return 'Registracija galima tik su įmonės el. paštu.';
+    }
+
+    if (emailDomain !== websiteDomain) {
+      return 'El. pašto adresas turi sutapti su organizacijos svetainės domenu.';
+    }
+
+    return null;
+  }
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
-    if (!isValidEmail(email)) {
-      setError('Neteisingas el. pašto formatas.');
+    if (!firstName.trim() || !lastName.trim()) {
+      setError('Vardas ir pavardė yra privalomi.');
       setLoading(false);
       return;
     }
 
-    if (password.length < 8) {
-      setError('Slaptažodis turi būti ne trumpesnis nei 8 simboliai.');
+    if (!orgName.trim() || !orgWebsite.trim()) {
+      setError('Organizacijos pavadinimas ir svetainė yra privalomi.');
+      setLoading(false);
+      return;
+    }
+
+    const domainError = validateDomains();
+    if (domainError) {
+      setError(domainError);
+      setLoading(false);
+      return;
+    }
+
+    if (password.length < 12) {
+      setError('Slaptažodis turi būti ne trumpesnis nei 12 simbolių.');
       setLoading(false);
       return;
     }
@@ -37,25 +83,33 @@ export default function RegisterPage() {
       return;
     }
 
-    const { error: authError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: `${window.location.origin}/api/auth/callback`,
-      },
-    });
+    try {
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          email: email.trim().toLowerCase(),
+          orgName: orgName.trim(),
+          orgWebsite: extractDomain(orgWebsite),
+          password,
+        }),
+      });
 
-    if (authError) {
-      if (authError.message.includes('already registered')) {
-        setError('Šis el. pašto adresas jau registruotas.');
-      } else {
-        setError('Registracijos klaida. Bandykite dar kartą.');
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || 'Registracijos klaida. Bandykite dar kartą.');
+        setLoading(false);
+        return;
       }
-      setLoading(false);
-      return;
+
+      setSuccess(true);
+    } catch {
+      setError('Tinklo klaida. Bandykite dar kartą.');
     }
 
-    setSuccess(true);
     setLoading(false);
   }
 
@@ -65,11 +119,12 @@ export default function RegisterPage() {
         <div className="max-w-md w-full space-y-8 p-8 bg-white rounded-lg shadow-md">
           <div className="text-center">
             <h1 className="text-2xl font-bold text-gray-900">
-              Registracija sėkminga
+              Registracija gauta
             </h1>
             <p className="mt-4 text-gray-600">
-              Patvirtinimo nuoroda išsiųsta į <strong>{email}</strong>.
-              Patikrinkite savo el. paštą ir spauskite nuorodą, kad aktyvuotumėte paskyrą.
+              Jūsų registracijos prašymas sėkmingai pateiktas. Administratorius
+              peržiūrės Jūsų paraišką ir gausite pranešimą el. paštu
+              adresu <strong>{email}</strong>.
             </p>
             <Link
               href="/login"
@@ -84,7 +139,7 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12">
       <div className="max-w-md w-full space-y-8 p-8 bg-white rounded-lg shadow-md">
         <div>
           <h1 className="text-2xl font-bold text-center text-gray-900">
@@ -103,9 +158,68 @@ export default function RegisterPage() {
           )}
 
           <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="firstName" className="block text-sm font-medium text-gray-700">
+                  Vardas
+                </label>
+                <input
+                  id="firstName"
+                  type="text"
+                  required
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+                />
+              </div>
+              <div>
+                <label htmlFor="lastName" className="block text-sm font-medium text-gray-700">
+                  Pavardė
+                </label>
+                <input
+                  id="lastName"
+                  type="text"
+                  required
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="orgName" className="block text-sm font-medium text-gray-700">
+                Organizacijos pavadinimas
+              </label>
+              <input
+                id="orgName"
+                type="text"
+                required
+                value={orgName}
+                onChange={(e) => setOrgName(e.target.value)}
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+                placeholder="UAB Pavyzdys"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="orgWebsite" className="block text-sm font-medium text-gray-700">
+                Organizacijos svetainė
+              </label>
+              <input
+                id="orgWebsite"
+                type="text"
+                required
+                value={orgWebsite}
+                onChange={(e) => setOrgWebsite(e.target.value)}
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+                placeholder="pavyzdys.lt"
+              />
+            </div>
+
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                El. pašto adresas
+                El. pašto adresas (įmonės)
               </label>
               <input
                 id="email"
@@ -115,7 +229,7 @@ export default function RegisterPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-                placeholder="jusu@organizacija.lt"
+                placeholder="vardas@organizacija.lt"
               />
             </div>
 
@@ -128,11 +242,11 @@ export default function RegisterPage() {
                 name="password"
                 type="password"
                 required
-                minLength={8}
+                minLength={12}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-                placeholder="Mažiausiai 8 simboliai"
+                placeholder="Mažiausiai 12 simbolių"
               />
             </div>
 
@@ -145,7 +259,7 @@ export default function RegisterPage() {
                 name="confirmPassword"
                 type="password"
                 required
-                minLength={8}
+                minLength={12}
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"

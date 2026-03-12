@@ -33,23 +33,41 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Protected routes — redirect to login if not authenticated
-  const isAuthRoute = request.nextUrl.pathname.startsWith('/login') ||
-    request.nextUrl.pathname.startsWith('/register');
-  const isApiRoute = request.nextUrl.pathname.startsWith('/api');
-  const isCallbackRoute = request.nextUrl.pathname.startsWith('/api/auth/callback');
+  const pathname = request.nextUrl.pathname;
+
+  // Public auth routes — accessible without login
+  const authRoutes = ['/login', '/register', '/laukiama', '/pamirsau-slaptazodi', '/naujas-slaptazodis'];
+  const isAuthRoute = authRoutes.some(route => pathname.startsWith(route));
+  const isApiRoute = pathname.startsWith('/api');
+  const isCallbackRoute = pathname.startsWith('/api/auth/callback');
 
   if (isCallbackRoute) {
     return supabaseResponse;
   }
 
-  if (!user && !isAuthRoute && !isApiRoute && request.nextUrl.pathname !== '/') {
+  if (!user && !isAuthRoute && !isApiRoute && pathname !== '/') {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     return NextResponse.redirect(url);
   }
 
-  if (user && isAuthRoute) {
+  // If user is logged in, check approval status before allowing dashboard access
+  if (user && !isAuthRoute && !isApiRoute && pathname !== '/') {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('status')
+      .eq('id', user.id)
+      .single();
+
+    // Pending or rejected users get redirected to waiting page
+    if (profile && (profile.status === 'pending' || profile.status === 'rejected') && pathname !== '/laukiama') {
+      const url = request.nextUrl.clone();
+      url.pathname = '/laukiama';
+      return NextResponse.redirect(url);
+    }
+  }
+
+  if (user && isAuthRoute && !pathname.startsWith('/laukiama') && !pathname.startsWith('/pamirsau-slaptazodi') && !pathname.startsWith('/naujas-slaptazodis')) {
     const url = request.nextUrl.clone();
     url.pathname = '/dashboard';
     return NextResponse.redirect(url);

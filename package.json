@@ -10,11 +10,14 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
+    "@react-email/components": "^1.0.9",
     "@supabase/ssr": "^0.9.0",
     "@supabase/supabase-js": "^2.99.1",
     "next": "14.2.35",
     "react": "^18",
-    "react-dom": "^18"
+    "react-dom": "^18",
+    "react-email": "^5.2.9",
+    "resend": "^6.9.3"
   },
   "devDependencies": {
     "@types/node": "^20",
