@@ -2,6 +2,7 @@ import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supab
 import { NextResponse } from 'next/server';
 import { runAllScanners } from '@/lib/scanners';
 import { generateReport } from '@/lib/report/generator';
+import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
 
 export async function POST(request: Request) {
   const supabase = createServerSupabaseClient();
@@ -9,6 +10,15 @@ export async function POST(request: Request) {
 
   if (!user) {
     return NextResponse.json({ error: 'Neautorizuota.' }, { status: 401 });
+  }
+
+  // Rate limiting: max 10 requests/minute per user
+  const rateResult = checkRateLimit(`scan:${user.id}`);
+  if (!rateResult.allowed) {
+    return NextResponse.json(
+      { error: 'Per daug užklausų. Palaukite minutę ir bandykite dar kartą.' },
+      { status: 429, headers: rateLimitHeaders(rateResult) },
+    );
   }
 
   // Get user's profile and org
@@ -192,11 +202,20 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Neautorizuota.' }, { status: 401 });
   }
 
+  // Rate limiting
+  const rateResult = checkRateLimit(`scan-status:${user.id}`);
+  if (!rateResult.allowed) {
+    return NextResponse.json(
+      { error: 'Per daug užklausų. Palaukite minutę.' },
+      { status: 429, headers: rateLimitHeaders(rateResult) },
+    );
+  }
+
   const { searchParams } = new URL(request.url);
   const scanId = searchParams.get('id');
 
-  if (!scanId) {
-    return NextResponse.json({ error: 'Skenavimo ID nepateiktas.' }, { status: 400 });
+  if (!scanId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(scanId)) {
+    return NextResponse.json({ error: 'Netinkamas skenavimo ID formatas.' }, { status: 400 });
   }
 
   // RLS ensures user can only see their own org's scans

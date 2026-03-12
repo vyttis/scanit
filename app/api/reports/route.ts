@@ -1,6 +1,9 @@
 import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 import { generateReport } from '@/lib/report/generator';
+import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * POST /api/reports — Generate a report for a completed scan.
@@ -12,6 +15,15 @@ export async function POST(request: Request) {
 
   if (!user) {
     return NextResponse.json({ error: 'Neautorizuota.' }, { status: 401 });
+  }
+
+  // Rate limiting: max 10 requests/minute per user
+  const rateResult = checkRateLimit(`reports:${user.id}`);
+  if (!rateResult.allowed) {
+    return NextResponse.json(
+      { error: 'Per daug užklausų. Palaukite minutę ir bandykite dar kartą.' },
+      { status: 429, headers: rateLimitHeaders(rateResult) },
+    );
   }
 
   // Get user's profile and org
@@ -33,8 +45,8 @@ export async function POST(request: Request) {
   }
 
   const scanId = body.scan_id;
-  if (!scanId || typeof scanId !== 'string') {
-    return NextResponse.json({ error: 'scan_id privalomas.' }, { status: 400 });
+  if (!scanId || typeof scanId !== 'string' || !UUID_REGEX.test(scanId)) {
+    return NextResponse.json({ error: 'Netinkamas scan_id formatas.' }, { status: 400 });
   }
 
   // Verify scan belongs to user's organization (RLS enforced via user client)
@@ -131,11 +143,20 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Neautorizuota.' }, { status: 401 });
   }
 
+  // Rate limiting
+  const rateResultGet = checkRateLimit(`reports-get:${user.id}`);
+  if (!rateResultGet.allowed) {
+    return NextResponse.json(
+      { error: 'Per daug užklausų. Palaukite minutę.' },
+      { status: 429, headers: rateLimitHeaders(rateResultGet) },
+    );
+  }
+
   const { searchParams } = new URL(request.url);
   const scanId = searchParams.get('scan_id');
 
-  if (!scanId) {
-    return NextResponse.json({ error: 'scan_id parametras privalomas.' }, { status: 400 });
+  if (!scanId || !UUID_REGEX.test(scanId)) {
+    return NextResponse.json({ error: 'Netinkamas scan_id formatas.' }, { status: 400 });
   }
 
   // RLS ensures user can only access their own org's data

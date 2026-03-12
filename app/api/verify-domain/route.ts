@@ -2,6 +2,7 @@ import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supab
 import { NextResponse } from 'next/server';
 import { isValidDomain, sanitizeDomain, isValidEmail, generateVerificationToken } from '@/lib/validations';
 import { resolve } from 'dns/promises';
+import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
 
 export async function POST(request: Request) {
   const supabase = createServerSupabaseClient();
@@ -11,11 +12,26 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Neautorizuota.' }, { status: 401 });
   }
 
-  const body = await request.json();
+  // Rate limiting: max 10 requests/minute per user
+  const rateResult = checkRateLimit(`verify-domain:${user.id}`);
+  if (!rateResult.allowed) {
+    return NextResponse.json(
+      { error: 'Per daug užklausų. Palaukite minutę ir bandykite dar kartą.' },
+      { status: 429, headers: rateLimitHeaders(rateResult) },
+    );
+  }
+
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Netinkama užklausa.' }, { status: 400 });
+  }
+
   const { action } = body;
 
   if (action === 'register') {
-    return handleRegister(user.id, body);
+    return handleRegister(user.id, body as { name: string; domain: string; contact_email: string; sector: string | null });
   } else if (action === 'verify') {
     return handleVerify(user.id);
   }
