@@ -1,0 +1,200 @@
+name: Deploy scanit.lt to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      supabase_access_token:
+        description: 'Supabase Access Token'
+        required: true
+        type: string
+      vercel_token:
+        description: 'Vercel Token'
+        required: true
+        type: string
+      supabase_db_password:
+        description: 'Supabase DB Password (leave empty to auto-generate)'
+        required: false
+        type: string
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Supabase CLI
+        run: npm install -g supabase@latest
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      # ── Step 1: Create Supabase project ──
+      - name: Get Supabase org ID
+        id: supabase_org
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
+        run: |
+          ORG_ID=$(supabase orgs list --output json | python3 -c "import sys,json; orgs=json.load(sys.stdin); print(orgs[0]['id'])")
+          echo "org_id=$ORG_ID" >> "$GITHUB_OUTPUT"
+          echo "Supabase org: $ORG_ID"
+
+      - name: Check if project exists or create it
+        id: supabase_project
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
+        run: |
+          EXISTING=$(supabase projects list --output json | python3 -c "
+          import sys,json
+          projects = json.load(sys.stdin)
+          for p in projects:
+              if p['name'] == 'scanit-lt':
+                  print(p['id'])
+                  break
+          " 2>/dev/null || echo "")
+
+          if [ -n "$EXISTING" ]; then
+            echo "ref=$EXISTING" >> "$GITHUB_OUTPUT"
+            echo "Project already exists: $EXISTING"
+          else
+            DB_PASS="${{ inputs.supabase_db_password }}"
+            if [ -z "$DB_PASS" ]; then
+              DB_PASS=$(openssl rand -base64 32 | tr -d '/+=' | head -c 24)
+            fi
+            echo "::add-mask::$DB_PASS"
+
+            REF=$(supabase projects create scanit-lt \
+              --org-id "${{ steps.supabase_org.outputs.org_id }}" \
+              --db-password "$DB_PASS" \
+              --region eu-central-1 \
+              --output json | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+
+            echo "ref=$REF" >> "$GITHUB_OUTPUT"
+            echo "db_password=$DB_PASS" >> "$GITHUB_OUTPUT"
+            echo "Created project: $REF"
+          fi
+
+      - name: Wait for Supabase project to be ready
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
+        run: |
+          REF="${{ steps.supabase_project.outputs.ref }}"
+          echo "Waiting for project $REF to be ready..."
+          for i in $(seq 1 30); do
+            STATUS=$(supabase projects list --output json | python3 -c "
+          import sys,json
+          projects = json.load(sys.stdin)
+          for p in projects:
+              if p['id'] == '$REF':
+                  print(p.get('status', 'UNKNOWN'))
+                  break
+          " 2>/dev/null || echo "UNKNOWN")
+
+            echo "  Attempt $i/30 — Status: $STATUS"
+            if [ "$STATUS" = "ACTIVE_HEALTHY" ]; then
+              echo "Project is ready!"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "WARNING: Project may not be fully ready yet, continuing..."
+
+      # ── Step 2: Run migrations ──
+      - name: Link and run migrations
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
+        run: |
+          REF="${{ steps.supabase_project.outputs.ref }}"
+          supabase link --project-ref "$REF"
+          supabase db push --linked
+          echo "Migrations applied successfully."
+
+      # ── Step 3: Create private storage bucket ──
+      - name: Get Supabase API keys
+        id: supabase_keys
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
+        run: |
+          REF="${{ steps.supabase_project.outputs.ref }}"
+          API_KEYS=$(supabase projects api-keys --project-ref "$REF" --output json)
+
+          SUPABASE_URL="https://${REF}.supabase.co"
+          ANON_KEY=$(echo "$API_KEYS" | python3 -c "import sys,json; keys=json.load(sys.stdin); print([k['api_key'] for k in keys if k['name']=='anon'][0])")
+          SERVICE_KEY=$(echo "$API_KEYS" | python3 -c "import sys,json; keys=json.load(sys.stdin); print([k['api_key'] for k in keys if k['name']=='service_role'][0])")
+
+          echo "::add-mask::$ANON_KEY"
+          echo "::add-mask::$SERVICE_KEY"
+
+          echo "url=$SUPABASE_URL" >> "$GITHUB_OUTPUT"
+          echo "anon_key=$ANON_KEY" >> "$GITHUB_OUTPUT"
+          echo "service_key=$SERVICE_KEY" >> "$GITHUB_OUTPUT"
+
+          echo "Supabase URL: $SUPABASE_URL"
+
+      - name: Create reports storage bucket
+        run: |
+          curl -sf -X POST "${{ steps.supabase_keys.outputs.url }}/storage/v1/bucket" \
+            -H "Authorization: Bearer ${{ steps.supabase_keys.outputs.service_key }}" \
+            -H "apikey: ${{ steps.supabase_keys.outputs.service_key }}" \
+            -H "Content-Type: application/json" \
+            -d '{"id":"reports","name":"reports","public":false}' \
+            && echo "Storage bucket created." \
+            || echo "Storage bucket may already exist (OK)."
+
+      # ── Step 4: Deploy to Vercel ──
+      - name: Link Vercel project
+        env:
+          VERCEL_TOKEN: ${{ inputs.vercel_token }}
+        run: vercel link --yes --token "$VERCEL_TOKEN"
+
+      - name: Set Vercel environment variables
+        env:
+          VERCEL_TOKEN: ${{ inputs.vercel_token }}
+        run: |
+          NEXTAUTH_SECRET=$(openssl rand -base64 32)
+
+          echo "${{ steps.supabase_keys.outputs.url }}"        | vercel env add NEXT_PUBLIC_SUPABASE_URL production --token "$VERCEL_TOKEN" --force 2>/dev/null || true
+          echo "${{ steps.supabase_keys.outputs.anon_key }}"    | vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY production --token "$VERCEL_TOKEN" --force 2>/dev/null || true
+          echo "${{ steps.supabase_keys.outputs.service_key }}" | vercel env add SUPABASE_SERVICE_ROLE_KEY production --token "$VERCEL_TOKEN" --force 2>/dev/null || true
+          echo "$NEXTAUTH_SECRET"                                | vercel env add NEXTAUTH_SECRET production --token "$VERCEL_TOKEN" --force 2>/dev/null || true
+          echo "https://platform.scanit.lt"                      | vercel env add NEXT_PUBLIC_APP_URL production --token "$VERCEL_TOKEN" --force 2>/dev/null || true
+
+          echo "Vercel environment variables set."
+
+      - name: Deploy to Vercel production
+        id: vercel_deploy
+        env:
+          VERCEL_TOKEN: ${{ inputs.vercel_token }}
+        run: |
+          DEPLOY_URL=$(vercel --prod --yes --token "$VERCEL_TOKEN" 2>&1 | tail -1)
+          echo "deploy_url=$DEPLOY_URL" >> "$GITHUB_OUTPUT"
+          echo "Deployed to: $DEPLOY_URL"
+
+      # ── Summary ──
+      - name: Deployment summary
+        run: |
+          echo "=========================================="
+          echo "  scanit.lt — DEPLOYMENT COMPLETE"
+          echo "=========================================="
+          echo ""
+          echo "  Vercel:   ${{ steps.vercel_deploy.outputs.deploy_url }}"
+          echo "  Supabase: ${{ steps.supabase_keys.outputs.url }}"
+          echo "  Project:  ${{ steps.supabase_project.outputs.ref }}"
+          echo ""
+          echo "  Next steps:"
+          echo "  1. Add custom domain platform.scanit.lt in Vercel"
+          echo "  2. Add scan API keys (SHODAN, HIBP, etc.) in Vercel env vars"
+          echo "  3. Enable MFA in Supabase Auth settings"
+          echo "  4. Add ANTHROPIC_API_KEY in Vercel env vars"
+          echo ""
