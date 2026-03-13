@@ -171,6 +171,27 @@ async function executeScan(
     // Run all 8 scanners in parallel
     const results = await runAllScanners(domain);
 
+    // Track scanner success/failure for visibility
+    const failedScanners = results.filter((r) => !r.success);
+    const succeededScanners = results.filter((r) => r.success);
+    const scannerErrors = failedScanners.map((r) => ({
+      module: r.module,
+      error: r.error ?? 'Unknown error',
+    }));
+
+    if (failedScanners.length > 0) {
+      console.error(`Scan ${scanId}: ${failedScanners.length} scanner(s) failed:`, scannerErrors);
+    }
+    console.log(`Scan ${scanId}: ${succeededScanners.length}/8 scanners succeeded, ${failedScanners.length}/8 failed`);
+
+    // Store scanner errors in scan record for UI visibility
+    await serviceClient
+      .from('scans')
+      .update({
+        scanner_errors: scannerErrors.length > 0 ? scannerErrors : null,
+      })
+      .eq('id', scanId);
+
     // Collect all findings from all scanners
     const allFindings = results.flatMap((result) =>
       result.findings.map((finding) => ({
@@ -186,7 +207,7 @@ async function executeScan(
       })),
     );
 
-    // Store all findings in one batch
+    // Store all findings in one batch — fail the scan if DB insert fails
     if (allFindings.length > 0) {
       const { error: findingsError } = await serviceClient
         .from('findings')
@@ -194,23 +215,24 @@ async function executeScan(
 
       if (findingsError) {
         console.error('Error storing findings:', findingsError);
+        throw new Error(`Failed to store findings: ${findingsError.message}`);
       }
     }
 
-    // Log failed scanners (for monitoring, not exposed to frontend)
-    const failedScanners = results.filter((r) => !r.success);
-    if (failedScanners.length > 0) {
-      console.error('Failed scanners:', failedScanners.map((r) => ({
-        module: r.module,
-        error: r.error,
-      })));
+    // If ALL scanners failed and there are zero findings, mark as failed
+    if (succeededScanners.length === 0) {
+      throw new Error(`All 8 scanners failed. Errors: ${scannerErrors.map(e => `${e.module}: ${e.error}`).join('; ')}`);
     }
 
     // Mark scan as completed
-    await serviceClient
+    const { error: statusError } = await serviceClient
       .from('scans')
       .update({ status: 'completed', completed_at: new Date().toISOString() })
       .eq('id', scanId);
+
+    if (statusError) {
+      console.error(`Failed to update scan ${scanId} status to completed:`, statusError);
+    }
 
     // Auto-generate report after successful scan
     let riskScore = 0;
@@ -223,8 +245,18 @@ async function executeScan(
       const reportResult = await generateReport(scanId);
       riskScore = reportResult.riskScore;
     } catch (reportErr) {
-      // Report generation failure should not mark the scan as failed
+      // Report generation failure: log but don't fail scan (findings are still stored)
       console.error(`Report generation failed for scan ${scanId}:`, reportErr);
+      // Store the error in scanner_errors for visibility
+      await serviceClient
+        .from('scans')
+        .update({
+          scanner_errors: [
+            ...scannerErrors,
+            { module: 'report_generation', error: reportErr instanceof Error ? reportErr.message : 'Unknown error' },
+          ],
+        })
+        .eq('id', scanId);
     }
 
     // Count findings for email
@@ -304,15 +336,40 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Netinkamas skenavimo ID formatas.' }, { status: 400 });
   }
 
-  // RLS ensures user can only see their own org's scans
-  const { data: scan } = await supabase
+  // Check user role — superadmin needs service role to bypass RLS (org_id=NULL)
+  const serviceClient = createServiceRoleClient();
+  const { data: profile } = await serviceClient
+    .from('profiles')
+    .select('org_id, role')
+    .eq('id', user.id)
+    .single();
+
+  const isSuperadmin = profile?.role === 'superadmin';
+
+  // Superadmin uses service role (can see all scans); regular users use RLS
+  const queryClient = isSuperadmin ? serviceClient : supabase;
+  const { data: scan } = await queryClient
     .from('scans')
-    .select('id, status, started_at, completed_at, created_at')
+    .select('id, status, started_at, completed_at, created_at, scanner_errors')
     .eq('id', scanId)
     .single();
 
   if (!scan) {
     return NextResponse.json({ error: 'Skenavimas nerastas.' }, { status: 404 });
+  }
+
+  // For non-superadmin, verify they can only see their own org's scans
+  if (!isSuperadmin && profile?.org_id) {
+    const { data: scanOrg } = await supabase
+      .from('scans')
+      .select('id')
+      .eq('id', scanId)
+      .eq('org_id', profile.org_id)
+      .single();
+
+    if (!scanOrg) {
+      return NextResponse.json({ error: 'Skenavimas nerastas.' }, { status: 404 });
+    }
   }
 
   return NextResponse.json(scan);

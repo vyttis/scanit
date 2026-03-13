@@ -37,6 +37,11 @@ export interface Profile {
   created_at: string;
 }
 
+export interface ScannerError {
+  module: string;
+  error: string;
+}
+
 export interface Scan {
   id: string;
   org_id: string;
@@ -45,6 +50,7 @@ export interface Scan {
   triggered_by: string | null;
   started_at: string | null;
   completed_at: string | null;
+  scanner_errors: ScannerError[] | null;
   created_at: string;
 }
 

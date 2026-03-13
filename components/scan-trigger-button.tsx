@@ -13,6 +13,11 @@ const SCAN_MODULES = [
   { key: 'urlscan', label: 'URLScan' },
 ];
 
+interface ScannerError {
+  module: string;
+  error: string;
+}
+
 interface ScanTriggerButtonProps {
   orgVerified: boolean;
   isAdmin: boolean;
@@ -22,6 +27,7 @@ export function ScanTriggerButton({ orgVerified, isAdmin }: ScanTriggerButtonPro
   const [loading, setLoading] = useState(false);
   const [scanId, setScanId] = useState<string | null>(null);
   const [scanStatus, setScanStatus] = useState<string | null>(null);
+  const [scannerErrors, setScannerErrors] = useState<ScannerError[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const startTimeRef = useRef<number>(0);
@@ -32,9 +38,13 @@ export function ScanTriggerButton({ orgVerified, isAdmin }: ScanTriggerButtonPro
       if (res.ok) {
         const data = await res.json();
         setScanStatus(data.status);
+        if (data.scanner_errors) {
+          setScannerErrors(data.scanner_errors);
+        }
         if (data.status === 'completed' || data.status === 'failed') {
           setLoading(false);
-          window.location.reload();
+          // Small delay so user can see the final state
+          setTimeout(() => window.location.reload(), 1500);
         }
       }
     } catch {
@@ -58,15 +68,19 @@ export function ScanTriggerButton({ orgVerified, isAdmin }: ScanTriggerButtonPro
     return () => clearInterval(interval);
   }, [loading]);
 
-  // Simulated progress based on elapsed time (scans typically take 30-90s)
+  // Progress based on elapsed time (scans typically take 30-90s)
   const progressPercent = loading
     ? Math.min(95, Math.round((elapsedSeconds / 60) * 90))
     : scanStatus === 'completed' ? 100 : 0;
+
+  // Check which modules have errors
+  const failedModules = new Set(scannerErrors.map(e => e.module));
 
   async function handleTriggerScan() {
     setLoading(true);
     setError(null);
     setScanStatus('queued');
+    setScannerErrors([]);
     setElapsedSeconds(0);
 
     try {
@@ -94,7 +108,7 @@ export function ScanTriggerButton({ orgVerified, isAdmin }: ScanTriggerButtonPro
   const statusLabels: Record<string, string> = {
     queued: 'Ruošiamasi skenavimui...',
     running: 'Skenavimas vykdomas...',
-    completed: 'Skenavimas baigtas',
+    completed: 'Skenavimas baigtas!',
     failed: 'Skenavimas nepavyko',
   };
 
@@ -131,13 +145,31 @@ export function ScanTriggerButton({ orgVerified, isAdmin }: ScanTriggerButtonPro
       </div>
 
       {/* Scan progress panel */}
-      {loading && scanStatus && (
-        <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
+      {(loading || scanStatus === 'completed' || scanStatus === 'failed') && scanStatus && (
+        <div className={`border rounded-lg p-4 space-y-3 ${
+          scanStatus === 'failed' ? 'bg-red-50 border-red-200' :
+          scanStatus === 'completed' ? 'bg-green-50 border-green-200' :
+          'bg-white border-gray-200'
+        }`}>
           {/* Status + elapsed time */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="inline-block w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-              <span className="text-sm font-medium text-gray-900">
+              {scanStatus === 'completed' ? (
+                <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              ) : scanStatus === 'failed' ? (
+                <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              ) : (
+                <span className="inline-block w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+              )}
+              <span className={`text-sm font-medium ${
+                scanStatus === 'failed' ? 'text-red-900' :
+                scanStatus === 'completed' ? 'text-green-900' :
+                'text-gray-900'
+              }`}>
                 {statusLabels[scanStatus] || scanStatus}
               </span>
             </div>
@@ -149,19 +181,28 @@ export function ScanTriggerButton({ orgVerified, isAdmin }: ScanTriggerButtonPro
           {/* Progress bar */}
           <div className="w-full bg-gray-100 rounded-full h-2.5">
             <div
-              className="bg-blue-500 h-2.5 rounded-full transition-all duration-1000"
-              style={{ width: `${progressPercent}%` }}
+              className={`h-2.5 rounded-full transition-all duration-1000 ${
+                scanStatus === 'failed' ? 'bg-red-500' :
+                scanStatus === 'completed' ? 'bg-green-500' :
+                'bg-blue-500'
+              }`}
+              style={{ width: `${scanStatus === 'completed' ? 100 : scanStatus === 'failed' ? 100 : progressPercent}%` }}
             />
           </div>
 
           {/* Module indicators */}
           <div className="grid grid-cols-4 gap-2">
             {SCAN_MODULES.map((mod, i) => {
-              const moduleActive = scanStatus === 'running' && elapsedSeconds > i * 2;
-              const moduleDone = elapsedSeconds > (i + 1) * 8;
+              const hasFailed = failedModules.has(mod.key);
+              const moduleActive = scanStatus === 'running' && elapsedSeconds > i * 2 && !hasFailed;
+              const moduleDone = (scanStatus === 'completed' || elapsedSeconds > (i + 1) * 8) && !hasFailed;
               return (
                 <div key={mod.key} className="flex items-center gap-1.5">
-                  {moduleDone ? (
+                  {hasFailed ? (
+                    <svg className="w-3.5 h-3.5 text-red-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  ) : moduleDone ? (
                     <svg className="w-3.5 h-3.5 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                     </svg>
@@ -170,7 +211,12 @@ export function ScanTriggerButton({ orgVerified, isAdmin }: ScanTriggerButtonPro
                   ) : (
                     <span className="inline-block w-3.5 h-3.5 rounded-full bg-gray-200 flex-shrink-0" />
                   )}
-                  <span className={`text-xs ${moduleDone ? 'text-green-700' : moduleActive ? 'text-blue-700' : 'text-gray-400'}`}>
+                  <span className={`text-xs ${
+                    hasFailed ? 'text-red-600' :
+                    moduleDone ? 'text-green-700' :
+                    moduleActive ? 'text-blue-700' :
+                    'text-gray-400'
+                  }`}>
                     {mod.label}
                   </span>
                 </div>
@@ -178,12 +224,28 @@ export function ScanTriggerButton({ orgVerified, isAdmin }: ScanTriggerButtonPro
             })}
           </div>
 
+          {/* Scanner errors detail */}
+          {scannerErrors.length > 0 && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded px-3 py-2">
+              <p className="text-xs font-medium text-yellow-800 mb-1">
+                {scannerErrors.length} modulis(-iai) nepavyko:
+              </p>
+              {scannerErrors.map((err, i) => (
+                <p key={i} className="text-xs text-yellow-700">
+                  <span className="font-medium">{err.module}</span>: {err.error}
+                </p>
+              ))}
+            </div>
+          )}
+
           {/* Safe to close message */}
-          <div className="bg-blue-50 rounded px-3 py-2">
-            <p className="text-xs text-blue-700">
-              Skenavimas vyksta serveryje. Galite uždaryti šį langą — rezultatai bus matomi grįžus.
-            </p>
-          </div>
+          {loading && (
+            <div className="bg-blue-50 rounded px-3 py-2">
+              <p className="text-xs text-blue-700">
+                Skenavimas vyksta serveryje. Galite uždaryti šį langą — rezultatai bus matomi grįžus.
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>
