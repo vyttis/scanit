@@ -16,29 +16,22 @@ export function ReportDownloadButton({ scanId, hasReport }: ReportDownloadButton
     setError(null);
 
     try {
-      if (hasReport) {
-        // GET existing report signed URL
-        const res = await fetch(`/api/reports?scan_id=${scanId}`);
-        const data = await res.json();
-        if (res.ok && data.signed_url) {
-          window.open(data.signed_url, '_blank');
-        } else {
-          setError(data.error || 'Klaida gaunant ataskaitą.');
-        }
-      } else {
-        // POST to generate report
+      if (!hasReport) {
+        // Generate report first via POST
         const res = await fetch('/api/reports', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ scan_id: scanId }),
         });
         const data = await res.json();
-        if (res.ok && data.signed_url) {
-          window.open(data.signed_url, '_blank');
-        } else {
+        if (!res.ok) {
           setError(data.error || 'Klaida generuojant ataskaitą.');
+          return;
         }
       }
+
+      // Open PDF through our proxy endpoint (serves on platform.scanit.lt domain)
+      window.open(`/api/reports/download?scan_id=${scanId}`, '_blank');
     } catch {
       setError('Klaida. Bandykite dar kartą.');
     } finally {

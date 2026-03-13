@@ -1,7 +1,7 @@
 import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 import { waitUntil } from '@vercel/functions';
-import { runAllScanners } from '@/lib/scanners';
+import { runAllScanners, checkScannerEnvVars } from '@/lib/scanners';
 import { generateReport } from '@/lib/report/generator';
 import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
 import { sendEmail } from '@/lib/email/send';
@@ -197,11 +197,16 @@ async function executeScan(
     }
     console.log(`Scan ${scanId}: ${succeededScanners.length}/8 scanners succeeded, ${failedScanners.length}/8 failed`);
 
-    // Store scanner errors in scan record for UI visibility
+    // Store scanner errors + env var diagnostics in scan record for UI visibility
+    const envCheck = checkScannerEnvVars();
+    const diagnostics = [
+      ...scannerErrors,
+      { module: 'env_check', error: JSON.stringify(envCheck) },
+    ];
     await serviceClient
       .from('scans')
       .update({
-        scanner_errors: scannerErrors.length > 0 ? scannerErrors : null,
+        scanner_errors: diagnostics,
       })
       .eq('id', scanId);
 

@@ -1,5 +1,6 @@
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { generateExecutiveSummary, generateFindingDescription } from '@/lib/claude/generate-finding-text';
+import { htmlToPdf } from '@/lib/report/html-to-pdf';
 import type { Finding } from '@/types/database';
 import { formatReportDate } from '@/lib/utils/date';
 
@@ -306,13 +307,14 @@ export async function generateReport(scanId: string): Promise<GenerateReportResu
     reportId,
   });
 
-  // 7. Store HTML report in Supabase Storage (private bucket)
-  const pdfPath = `reports/${org.id}/${scanId}/${reportId}.html`;
+  // 7. Convert HTML to PDF and store in Supabase Storage (private bucket)
+  const pdfBuffer = await htmlToPdf(html);
+  const pdfPath = `reports/${org.id}/${scanId}/${reportId}.pdf`;
 
   const { error: uploadError } = await serviceClient.storage
     .from('reports')
-    .upload(pdfPath, Buffer.from(html, 'utf-8'), {
-      contentType: 'text/html',
+    .upload(pdfPath, pdfBuffer, {
+      contentType: 'application/pdf',
       upsert: false,
     });
 
