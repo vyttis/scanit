@@ -1,4 +1,4 @@
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { LogoutButton } from '@/components/logout-button';
@@ -26,7 +26,10 @@ export default async function DashboardLayout({
     redirect('/mfa-setup');
   }
 
-  const { data: profile } = await supabase
+  // Use service role to read profile — avoids RLS issues for superadmin
+  // (superadmin has org_id=NULL which breaks org-based RLS policies)
+  const serviceClient = createServiceRoleClient();
+  const { data: profile } = await serviceClient
     .from('profiles')
     .select('org_id, role, status')
     .eq('id', user.id)
