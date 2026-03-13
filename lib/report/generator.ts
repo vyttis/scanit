@@ -1,6 +1,5 @@
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { generateExecutiveSummary, generateFindingDescription } from '@/lib/claude/generate-finding-text';
-import { htmlToPdf } from '@/lib/report/html-to-pdf';
 import type { Finding } from '@/types/database';
 import { formatReportDate } from '@/lib/utils/date';
 
@@ -307,14 +306,30 @@ export async function generateReport(scanId: string): Promise<GenerateReportResu
     reportId,
   });
 
-  // 7. Convert HTML to PDF and store in Supabase Storage (private bucket)
-  const pdfBuffer = await htmlToPdf(html);
-  const pdfPath = `reports/${org.id}/${scanId}/${reportId}.pdf`;
+  // 7. Try PDF generation via Puppeteer, fall back to HTML if unavailable
+  let pdfPath: string;
+  let uploadBuffer: Buffer;
+  let uploadContentType: string;
+
+  try {
+    const { htmlToPdf } = await import('@/lib/report/html-to-pdf');
+    const pdfBuffer = await htmlToPdf(html);
+    pdfPath = `reports/${org.id}/${scanId}/${reportId}.pdf`;
+    uploadBuffer = pdfBuffer;
+    uploadContentType = 'application/pdf';
+    console.log(`Report ${reportId}: PDF generated successfully`);
+  } catch (pdfErr) {
+    // Puppeteer/Chromium not available (common on Vercel) — fall back to HTML
+    console.warn(`Report ${reportId}: PDF generation failed, falling back to HTML:`, pdfErr);
+    pdfPath = `reports/${org.id}/${scanId}/${reportId}.html`;
+    uploadBuffer = Buffer.from(html, 'utf-8');
+    uploadContentType = 'text/html';
+  }
 
   const { error: uploadError } = await serviceClient.storage
     .from('reports')
-    .upload(pdfPath, pdfBuffer, {
-      contentType: 'application/pdf',
+    .upload(pdfPath, uploadBuffer, {
+      contentType: uploadContentType,
       upsert: false,
     });
 
