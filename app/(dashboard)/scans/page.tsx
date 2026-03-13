@@ -157,10 +157,20 @@ export default async function ScansPage() {
                     </td>
                     <td className="px-6 py-4">
                       {scan.status === 'completed' ? (
-                        <ReportDownloadButton
-                          scanId={scan.id}
-                          hasReport={!!report?.pdf_path}
-                        />
+                        <div className="flex items-center gap-2">
+                          {report?.pdf_path && (
+                            <Link
+                              href={`/reports/${scan.id}`}
+                              className="px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-medium rounded-md hover:bg-gray-200 whitespace-nowrap"
+                            >
+                              Peržiūrėti
+                            </Link>
+                          )}
+                          <ReportDownloadButton
+                            scanId={scan.id}
+                            hasReport={!!report?.pdf_path}
+                          />
+                        </div>
                       ) : (
                         <span className="text-sm text-gray-400">—</span>
                       )}

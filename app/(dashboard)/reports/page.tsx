@@ -1,6 +1,7 @@
 import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { ReportDownloadButton } from '@/components/report-download-button';
 import { formatLithuanianDate } from '@/lib/utils/date';
+import Link from 'next/link';
 
 export default async function ReportsPage() {
   const supabase = createServerSupabaseClient();
@@ -77,10 +78,18 @@ export default async function ReportsPage() {
                     </div>
                   </div>
                 </div>
-                <ReportDownloadButton
-                  scanId={report.scan_id}
-                  hasReport={!!report.pdf_path}
-                />
+                <div className="flex items-center gap-2">
+                  <Link
+                    href={`/reports/${report.scan_id}`}
+                    className="px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-medium rounded-md hover:bg-gray-200 whitespace-nowrap"
+                  >
+                    Peržiūrėti
+                  </Link>
+                  <ReportDownloadButton
+                    scanId={report.scan_id}
+                    hasReport={!!report.pdf_path}
+                  />
+                </div>
               </div>
             </div>
           ))}

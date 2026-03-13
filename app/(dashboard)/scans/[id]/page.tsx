@@ -129,7 +129,17 @@ export default async function ScanDetailPage({ params }: { params: { id: string 
           )}
         </div>
         {scan.status === 'completed' && (
-          <ReportDownloadButton scanId={scan.id} hasReport={!!report?.pdf_path} />
+          <div className="flex items-center gap-2">
+            {report?.pdf_path && (
+              <Link
+                href={`/reports/${scan.id}`}
+                className="px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-medium rounded-md hover:bg-gray-200 whitespace-nowrap"
+              >
+                Peržiūrėti ataskaitą
+              </Link>
+            )}
+            <ReportDownloadButton scanId={scan.id} hasReport={!!report?.pdf_path} />
+          </div>
         )}
       </div>
 
