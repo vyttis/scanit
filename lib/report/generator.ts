@@ -1,6 +1,7 @@
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { generateExecutiveSummary, generateFindingDescription } from '@/lib/claude/generate-finding-text';
 import type { Finding } from '@/types/database';
+import { formatReportDate } from '@/lib/utils/date';
 
 // ---------------------------------------------------------------------------
 // Risk scoring
@@ -266,9 +267,7 @@ export async function generateReport(scanId: string): Promise<GenerateReportResu
   );
 
   // 6. Build HTML report
-  const scanDate = scan.completed_at
-    ? new Date(scan.completed_at).toISOString().split('T')[0]
-    : new Date().toISOString().split('T')[0];
+  const scanDate = formatReportDate(scan.completed_at || new Date());
 
   const reportId = crypto.randomUUID();
   const html = buildReportHtml({

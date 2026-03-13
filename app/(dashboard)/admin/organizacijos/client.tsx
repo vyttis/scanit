@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { AdminNav } from '@/components/admin-nav';
+import { formatLithuanianDateLong, formatLithuanianDateTimeLong } from '@/lib/utils/date';
 
 const SECTOR_LABELS: Record<string, string> = {
   energetika: 'Energetika',
@@ -580,24 +581,14 @@ function OrgRow({
               <div>
                 <span className="font-medium text-gray-500">Registracijos data</span>
                 <p className="mt-1 text-gray-900">
-                  {new Date(org.createdAt).toLocaleDateString('lt-LT', {
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric',
-                  })}
+                  {formatLithuanianDateLong(org.createdAt)}
                 </p>
               </div>
               <div>
                 <span className="font-medium text-gray-500">Paskutinio skenavimo data</span>
                 <p className="mt-1 text-gray-900">
                   {org.lastScanDate
-                    ? new Date(org.lastScanDate).toLocaleDateString('lt-LT', {
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })
+                    ? formatLithuanianDateTimeLong(org.lastScanDate)
                     : 'Neskenuota'}
                 </p>
               </div>

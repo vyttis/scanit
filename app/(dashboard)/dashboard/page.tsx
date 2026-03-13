@@ -7,6 +7,7 @@ import { RiskScoreBadge } from '@/components/risk-score-badge';
 import { RiskTrendChart } from '@/components/risk-trend-chart';
 import { DataEnrichment } from '@/components/data-enrichment';
 import type { Finding } from '@/types/database';
+import { formatLithuanianDateShort, formatLithuanianDateLong, formatLithuanianTime, formatLithuanianDate } from '@/lib/utils/date';
 
 export default async function DashboardPage() {
   const supabase = createServerSupabaseClient();
@@ -98,7 +99,7 @@ export default async function DashboardPage() {
   const trendPoints = (trendReports ?? [])
     .filter((r) => r.risk_score !== null)
     .map((r) => ({
-      date: new Date(r.created_at).toLocaleDateString('lt-LT', { month: 'short', day: 'numeric' }),
+      date: formatLithuanianDateShort(r.created_at),
       score: r.risk_score as number,
     }));
 
@@ -181,17 +182,10 @@ export default async function DashboardPage() {
           {latestScan ? (
             <div>
               <p className="text-lg font-semibold text-gray-900">
-                {new Date(latestScan.created_at).toLocaleDateString('lt-LT', {
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric',
-                })}
+                {formatLithuanianDateLong(latestScan.created_at)}
               </p>
               <p className="text-sm text-gray-500 mt-1">
-                {new Date(latestScan.created_at).toLocaleTimeString('lt-LT', {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
+                {formatLithuanianTime(latestScan.created_at)}
               </p>
               <div className="mt-3">
                 <span className={`inline-flex px-2.5 py-1 text-xs font-medium rounded-full ${
@@ -263,7 +257,7 @@ export default async function DashboardPage() {
       {latestScan && latestScan.status === 'completed' && (
         <div>
           <h2 className="text-lg font-bold text-gray-900 mb-4">
-            Skenavimo rezultatai — {new Date(latestScan.created_at).toLocaleDateString('lt-LT')}
+            Skenavimo rezultatai — {formatLithuanianDate(latestScan.created_at)}
           </h2>
           <FindingsList findings={findings} />
         </div>

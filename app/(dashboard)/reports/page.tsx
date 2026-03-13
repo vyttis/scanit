@@ -1,5 +1,6 @@
 import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { ReportDownloadButton } from '@/components/report-download-button';
+import { formatLithuanianDate } from '@/lib/utils/date';
 
 export default async function ReportsPage() {
   const supabase = createServerSupabaseClient();
@@ -62,7 +63,7 @@ export default async function ReportsPage() {
                     </p>
                   ) : null}
                   <p className="text-sm text-gray-500">
-                    {new Date(report.created_at).toLocaleDateString('lt-LT')}
+                    {formatLithuanianDate(report.created_at)}
                   </p>
                   <div className="flex items-center space-x-4 mt-2">
                     <span className={`text-2xl font-bold ${riskColor(report.risk_score)}`}>

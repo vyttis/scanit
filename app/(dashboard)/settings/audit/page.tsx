@@ -1,6 +1,7 @@
 import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
+import { formatLithuanianDateTime } from '@/lib/utils/date';
 
 const ACTION_LABELS: Record<string, string> = {
   scan_triggered: 'Skenavimas paleistas',
@@ -97,7 +98,7 @@ export default async function AuditLogPage() {
               {logs.map((log) => (
                 <tr key={log.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 text-sm text-gray-900 whitespace-nowrap">
-                    {new Date(log.created_at).toLocaleString('lt-LT')}
+                    {formatLithuanianDateTime(log.created_at)}
                   </td>
                   <td className="px-6 py-4">
                     <span className="inline-flex px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800">

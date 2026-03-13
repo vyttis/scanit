@@ -30,9 +30,22 @@ export function ScanTriggerButton({ orgVerified, isAdmin }: ScanTriggerButtonPro
   const [scannerErrors, setScannerErrors] = useState<ScannerError[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [timedOut, setTimedOut] = useState(false);
   const startTimeRef = useRef<number>(0);
 
+  const CLIENT_TIMEOUT_SECONDS = 300; // 5 minutes
+
   const pollStatus = useCallback(async (id: string) => {
+    // Client-side timeout: if polling for over 5 minutes, stop and show timeout
+    const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
+    if (elapsed > CLIENT_TIMEOUT_SECONDS) {
+      setTimedOut(true);
+      setLoading(false);
+      setScanStatus('failed');
+      setError('Skenavimas užtruko per ilgai. Bandykite dar kartą.');
+      return;
+    }
+
     try {
       const res = await fetch(`/api/scan?id=${id}`);
       if (res.ok) {
@@ -79,6 +92,7 @@ export function ScanTriggerButton({ orgVerified, isAdmin }: ScanTriggerButtonPro
   async function handleTriggerScan() {
     setLoading(true);
     setError(null);
+    setTimedOut(false);
     setScanStatus('queued');
     setScannerErrors([]);
     setElapsedSeconds(0);
@@ -141,6 +155,14 @@ export function ScanTriggerButton({ orgVerified, isAdmin }: ScanTriggerButtonPro
 
         {error && (
           <span className="text-sm text-red-600">{error}</span>
+        )}
+        {timedOut && (
+          <button
+            onClick={handleTriggerScan}
+            className="px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors"
+          >
+            Bandyti dar kartą
+          </button>
         )}
       </div>
 

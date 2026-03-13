@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { AdminNav } from '@/components/admin-nav';
+import { formatLithuanianDateTime } from '@/lib/utils/date';
 
 interface AuditEntry {
   id: string;
@@ -82,14 +83,7 @@ export function AdminAuditClient({ entries }: { entries: AuditEntry[] }) {
   const pageEntries = filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
 
   function formatDate(dateStr: string): string {
-    return new Date(dateStr).toLocaleString('lt-LT', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    });
+    return formatLithuanianDateTime(dateStr);
   }
 
   function formatDetails(details: Record<string, unknown> | null): string {

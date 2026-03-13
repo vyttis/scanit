@@ -1,5 +1,6 @@
 import type { ScannerResult, ScannerFinding } from './types';
 import { fetchWithTimeout } from './types';
+import { formatLithuanianDate } from '@/lib/utils/date';
 
 /**
  * SSL Labs scanner — checks certificate validity, expiry, cipher strength.
@@ -118,7 +119,7 @@ export async function scanSsl(domain: string): Promise<ScannerResult> {
               module: 'ssl',
               severity: 'critical',
               title_lt: 'SSL/TLS sertifikatas pasibaigęs',
-              description_lt: `Domeno ${domain} SSL/TLS sertifikatas pasibaigė prieš ${Math.abs(daysUntilExpiry)} dienų (${expiryDate.toLocaleDateString('lt-LT')}). Naudotojai matys saugumo įspėjimą naršyklėje.`,
+              description_lt: `Domeno ${domain} SSL/TLS sertifikatas pasibaigė prieš ${Math.abs(daysUntilExpiry)} dienų (${formatLithuanianDate(expiryDate)}). Naudotojai matys saugumo įspėjimą naršyklėje.`,
               recommendation_lt: 'Nedelsiant atnaujinkite SSL/TLS sertifikatą.',
               nis2_article: '11 str. 2 d. 5 p.',
               evidence: { domain, expiry_date: expiryDate.toISOString(), days_until_expiry: daysUntilExpiry },
@@ -128,7 +129,7 @@ export async function scanSsl(domain: string): Promise<ScannerResult> {
               module: 'ssl',
               severity: 'high',
               title_lt: `SSL/TLS sertifikatas baigiasi po ${daysUntilExpiry} dienų`,
-              description_lt: `Domeno ${domain} SSL/TLS sertifikatas baigsis ${expiryDate.toLocaleDateString('lt-LT')} (po ${daysUntilExpiry} dienų). Jei sertifikatas nebus atnaujintas laiku, naudotojai negalės saugiai pasiekti svetainės.`,
+              description_lt: `Domeno ${domain} SSL/TLS sertifikatas baigsis ${formatLithuanianDate(expiryDate)} (po ${daysUntilExpiry} dienų). Jei sertifikatas nebus atnaujintas laiku, naudotojai negalės saugiai pasiekti svetainės.`,
               recommendation_lt: 'Skubiai atnaujinkite SSL/TLS sertifikatą. Rekomenduojame nustatyti automatinį sertifikatų atnaujinimą.',
               nis2_article: '11 str. 2 d. 5 p.',
               evidence: { domain, expiry_date: expiryDate.toISOString(), days_until_expiry: daysUntilExpiry },

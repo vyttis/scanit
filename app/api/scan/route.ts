@@ -1,5 +1,6 @@
 import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
+import { waitUntil } from '@vercel/functions';
 import { runAllScanners } from '@/lib/scanners';
 import { generateReport } from '@/lib/report/generator';
 import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
@@ -7,6 +8,8 @@ import { sendEmail } from '@/lib/email/send';
 import { scanStartedHtml } from '@/lib/email/templates/scan-started';
 import { scanCompletedHtml } from '@/lib/email/templates/scan-completed';
 import { criticalFindingsHtml } from '@/lib/email/templates/critical-findings';
+
+export const maxDuration = 120;
 
 export async function POST(request: Request) {
   const supabase = createServerSupabaseClient();
@@ -146,10 +149,10 @@ export async function POST(request: Request) {
     }),
   }).catch((err) => console.error('Scan started email error:', err));
 
-  // Start scan in background (don't await in response)
-  executeScan(serviceClient, scan.id, org.id, org.domain, org.name, org.contact_email, userProfile?.first_name || 'Vartotojau').catch((err) => {
-    console.error(`Scan ${scan.id} background execution error:`, err);
-  });
+  // Start scan in background — waitUntil keeps the function alive after response is sent
+  waitUntil(
+    executeScan(serviceClient, scan.id, org.id, org.domain, org.name, org.contact_email, userProfile?.first_name || 'Vartotojau')
+  );
 
   return NextResponse.json({
     scan_id: scan.id,
@@ -241,7 +244,7 @@ async function executeScan(
       .eq('id', scanId);
 
     if (statusError) {
-      console.error(`Failed to update scan ${scanId} status to completed:`, statusError);
+      throw new Error(`Failed to update scan ${scanId} status to completed: ${statusError.message}`);
     }
 
     // Auto-generate report after successful scan
@@ -366,6 +369,27 @@ export async function GET(request: Request) {
 
   if (!scan) {
     return NextResponse.json({ error: 'Skenavimas nerastas.' }, { status: 404 });
+  }
+
+  // Stale scan detection: if running/queued for more than 10 minutes, auto-mark as failed
+  const STALE_SCAN_TIMEOUT_MS = 10 * 60 * 1000;
+  if (
+    (scan.status === 'running' || scan.status === 'queued') &&
+    (scan.started_at || scan.created_at) &&
+    Date.now() - new Date(scan.started_at || scan.created_at).getTime() > STALE_SCAN_TIMEOUT_MS
+  ) {
+    const timeoutError = [{ module: 'system', error: 'Skenavimas buvo nutrauktas dėl laiko limito.' }];
+    await serviceClient
+      .from('scans')
+      .update({
+        status: 'failed',
+        completed_at: new Date().toISOString(),
+        scanner_errors: timeoutError,
+      })
+      .eq('id', scanId);
+    scan.status = 'failed';
+    scan.completed_at = new Date().toISOString();
+    scan.scanner_errors = timeoutError;
   }
 
   // For non-superadmin, verify they can only see their own org's scans
