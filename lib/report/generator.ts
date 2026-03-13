@@ -187,6 +187,25 @@ skenavimo įvykdymo įrodymas pagal KSĮ reikalavimus.
 }
 
 // ---------------------------------------------------------------------------
+// Storage bucket helper
+// ---------------------------------------------------------------------------
+
+async function ensureReportsBucket(client: ReturnType<typeof createServiceRoleClient>) {
+  const { data: buckets } = await client.storage.listBuckets();
+  const exists = buckets?.some(b => b.name === 'reports');
+  if (!exists) {
+    const { error } = await client.storage.createBucket('reports', {
+      public: false,
+      fileSizeLimit: 10485760, // 10MB max
+    });
+    if (error) {
+      console.error('Failed to create reports bucket:', error);
+      throw new Error(`Failed to create storage bucket: ${error.message}`);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Main report generation pipeline
 // ---------------------------------------------------------------------------
 
@@ -210,6 +229,9 @@ export interface GenerateReportResult {
  */
 export async function generateReport(scanId: string): Promise<GenerateReportResult> {
   const serviceClient = createServiceRoleClient();
+
+  // Ensure storage bucket exists before attempting upload
+  await ensureReportsBucket(serviceClient);
 
   // 1. Fetch scan + organization
   const { data: scan, error: scanError } = await serviceClient

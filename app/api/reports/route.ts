@@ -198,6 +198,7 @@ export async function GET(request: Request) {
     .createSignedUrl(report.pdf_path, 3600);
 
   if (signedUrlError || !signedUrlData?.signedUrl) {
+    console.error('Signed URL error for report', report.id, ':', signedUrlError);
     return NextResponse.json({ error: 'Klaida generuojant atsisiuntimo nuorodą.' }, { status: 500 });
   }
 

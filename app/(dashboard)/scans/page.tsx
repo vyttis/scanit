@@ -1,4 +1,5 @@
 import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
+import Link from 'next/link';
 import { ReportDownloadButton } from '@/components/report-download-button';
 import { formatLithuanianDateTime } from '@/lib/utils/date';
 
@@ -108,7 +109,9 @@ export default async function ScansPage() {
                       </td>
                     )}
                     <td className="px-6 py-4 text-sm text-gray-900">
-                      {formatLithuanianDateTime(scan.created_at)}
+                      <Link href={`/scans/${scan.id}`} className="text-blue-600 hover:text-blue-800 hover:underline">
+                        {formatLithuanianDateTime(scan.created_at)}
+                      </Link>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600">
                       {scan.scan_type === 'light' ? 'Lengvas' : 'Gilus'}
