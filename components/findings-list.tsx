@@ -1,3 +1,6 @@
+'use client';
+
+import { useState } from 'react';
 import type { Finding } from '@/types/database';
 
 interface FindingsListProps {
@@ -14,20 +17,20 @@ const severityLabels: Record<string, string> = {
   info: 'Informacinis',
 };
 
-const severityColors: Record<string, string> = {
-  critical: 'bg-red-100 text-red-800 border-red-200',
-  high: 'bg-orange-100 text-orange-800 border-orange-200',
-  medium: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-  low: 'bg-blue-100 text-blue-800 border-blue-200',
-  info: 'bg-gray-100 text-gray-800 border-gray-200',
-};
-
 const severityBadgeColors: Record<string, string> = {
   critical: 'bg-red-600 text-white',
   high: 'bg-orange-500 text-white',
   medium: 'bg-yellow-500 text-white',
   low: 'bg-blue-500 text-white',
-  info: 'bg-gray-400 text-white',
+  info: 'bg-green-500 text-white',
+};
+
+const severityBorderColors: Record<string, string> = {
+  critical: 'border-l-red-600',
+  high: 'border-l-orange-500',
+  medium: 'border-l-yellow-500',
+  low: 'border-l-blue-500',
+  info: 'border-l-green-500',
 };
 
 const moduleLabels: Record<string, string> = {
@@ -40,6 +43,149 @@ const moduleLabels: Record<string, string> = {
   abuseipdb: 'AbuseIPDB',
   urlscan: 'URLScan',
 };
+
+function EvidenceBlock({ evidence }: { evidence: Record<string, unknown> | null }) {
+  const [open, setOpen] = useState(false);
+  if (!evidence) return null;
+
+  return (
+    <div className="mt-3">
+      <button
+        onClick={() => setOpen(!open)}
+        className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1 cursor-pointer"
+      >
+        <svg
+          className={`w-3 h-3 transition-transform ${open ? 'rotate-90' : ''}`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+        </svg>
+        Techninė informacija
+      </button>
+      {open && (
+        <pre className="mt-2 bg-gray-50 border border-gray-200 rounded-md p-3 text-xs text-gray-600 overflow-x-auto max-h-64 overflow-y-auto">
+          {JSON.stringify(evidence, null, 2)}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Split description_lt into structured sections if they exist.
+ * Looks for patterns like "KAS TAI:", "KODĖL TAI PAVOJINGA:", "VERSLO POVEIKIS:"
+ */
+function parseDescriptionSections(description: string): {
+  what: string | null;
+  why: string | null;
+  impact: string | null;
+  rest: string;
+} {
+  const whatMatch = description.match(/(?:KAS TAI[?:]?\s*)([\s\S]*?)(?=KODĖL TAI PAVOJINGA|VERSLO POVEIKIS|$)/i);
+  const whyMatch = description.match(/(?:KODĖL TAI PAVOJINGA[?:]?\s*)([\s\S]*?)(?=VERSLO POVEIKIS|$)/i);
+  const impactMatch = description.match(/(?:VERSLO POVEIKIS[?:]?\s*)([\s\S]*?)$/i);
+
+  if (whatMatch || whyMatch || impactMatch) {
+    return {
+      what: whatMatch?.[1]?.trim() || null,
+      why: whyMatch?.[1]?.trim() || null,
+      impact: impactMatch?.[1]?.trim() || null,
+      rest: '',
+    };
+  }
+
+  return { what: null, why: null, impact: null, rest: description };
+}
+
+function FindingCard({ finding }: { finding: Finding }) {
+  const severity = finding.severity;
+  const sections = parseDescriptionSections(finding.description_lt);
+  const hasSections = sections.what || sections.why || sections.impact;
+  const isPositive = severity === 'info';
+
+  return (
+    <div className={`bg-white border border-gray-200 border-l-4 ${severityBorderColors[severity]} rounded-lg shadow-sm overflow-hidden`}>
+      {/* Header bar */}
+      <div className="px-5 py-3 bg-gray-50 border-b border-gray-100 flex items-center gap-2 flex-wrap">
+        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${severityBadgeColors[severity]}`}>
+          {severityLabels[severity]}
+        </span>
+        <span className="text-xs font-medium text-gray-500 px-2 py-0.5 bg-white rounded border border-gray-200">
+          {moduleLabels[finding.module] || finding.module}
+        </span>
+        {finding.nis2_article && (
+          <span className="text-xs font-medium text-purple-700 px-2 py-0.5 bg-purple-50 rounded border border-purple-200">
+            KSĮ {finding.nis2_article}
+          </span>
+        )}
+      </div>
+
+      {/* Body */}
+      <div className="px-5 py-4 space-y-4">
+        {/* Title */}
+        <h3 className="font-semibold text-gray-900 text-base leading-tight">{finding.title_lt}</h3>
+
+        {/* Structured sections */}
+        {hasSections ? (
+          <>
+            {sections.what && (
+              <div>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <span className="text-sm">📋</span>
+                  <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Kas tai?</span>
+                </div>
+                <p className="text-sm text-gray-700 leading-relaxed pl-5">{sections.what}</p>
+              </div>
+            )}
+            {sections.why && (
+              <div>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <span className="text-sm">⚠️</span>
+                  <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Kodėl tai pavojinga?</span>
+                </div>
+                <p className="text-sm text-gray-700 leading-relaxed pl-5">{sections.why}</p>
+              </div>
+            )}
+            {sections.impact && (
+              <div>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <span className="text-sm">💼</span>
+                  <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Verslo poveikis</span>
+                </div>
+                <p className="text-sm text-gray-700 leading-relaxed pl-5">{sections.impact}</p>
+              </div>
+            )}
+          </>
+        ) : (
+          <div>
+            <div className="flex items-center gap-1.5 mb-1">
+              <span className="text-sm">{isPositive ? '✅' : '📋'}</span>
+              <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">
+                {isPositive ? 'Aprašymas' : 'Kas tai?'}
+              </span>
+            </div>
+            <p className="text-sm text-gray-700 leading-relaxed pl-5 whitespace-pre-line">{finding.description_lt}</p>
+          </div>
+        )}
+
+        {/* Recommendations */}
+        <div className="pt-2 border-t border-gray-100">
+          <div className="flex items-center gap-1.5 mb-1">
+            <span className="text-sm">✅</span>
+            <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Rekomenduojami veiksmai</span>
+          </div>
+          <p className="text-sm text-gray-700 leading-relaxed pl-5 whitespace-pre-line">{finding.recommendation_lt}</p>
+        </div>
+
+        {/* Collapsible evidence */}
+        <EvidenceBlock evidence={finding.evidence as Record<string, unknown> | null} />
+      </div>
+    </div>
+  );
+}
 
 export function FindingsList({ findings }: FindingsListProps) {
   if (findings.length === 0) {
@@ -60,45 +206,21 @@ export function FindingsList({ findings }: FindingsListProps) {
   }, {} as Record<string, Finding[]>);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {Object.entries(grouped).map(([severity, items]) => (
         <div key={severity}>
-          <div className="flex items-center space-x-2 mb-3">
-            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${severityBadgeColors[severity]}`}>
+          <div className="flex items-center space-x-2 mb-4">
+            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${severityBadgeColors[severity]}`}>
               {severityLabels[severity]}
             </span>
-            <span className="text-sm text-gray-500">
+            <span className="text-sm text-gray-500 font-medium">
               {items.length} {items.length === 1 ? 'trūkumas' : 'trūkumai'}
             </span>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-4">
             {items.map((finding) => (
-              <div
-                key={finding.id}
-                className={`border rounded-lg p-4 ${severityColors[severity]}`}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-2 mb-1">
-                      <span className="text-xs font-medium px-2 py-0.5 bg-white/50 rounded">
-                        {moduleLabels[finding.module] || finding.module}
-                      </span>
-                      {finding.nis2_article && (
-                        <span className="text-xs px-2 py-0.5 bg-white/50 rounded">
-                          KSĮ {finding.nis2_article}
-                        </span>
-                      )}
-                    </div>
-                    <h3 className="font-medium text-sm mb-2">{finding.title_lt}</h3>
-                    <p className="text-sm opacity-90 mb-2">{finding.description_lt}</p>
-                    <div className="mt-2 pt-2 border-t border-current/10">
-                      <p className="text-xs font-medium">Rekomenduojami veiksmai:</p>
-                      <p className="text-xs opacity-80 mt-1">{finding.recommendation_lt}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <FindingCard key={finding.id} finding={finding} />
             ))}
           </div>
         </div>

@@ -91,9 +91,13 @@ export async function scanMxtoolbox(domain: string): Promise<ScannerResult> {
           findings.push({
             module: 'mxtoolbox',
             severity: 'info',
-            title_lt: `DMARC politika: ${policy} — tinkama konfigūracija`,
-            description_lt: `Domeno ${domain} DMARC politika yra „${policy}". Tai reiškia, kad suklastoti el. laiškai bus ${policy === 'reject' ? 'atmetami' : 'perkeliami į šlamšto aplanką'}.`,
-            recommendation_lt: 'Konfigūracija tinkama. Tęskite DMARC ataskaitų stebėjimą.',
+            title_lt: `DMARC politika: ${policy} — puiki apsauga`,
+            description_lt:
+              `DMARC su politika „${policy}" — tai reiškia, kad niekas negali siųsti el. laiškų apsimetant jūsų domenu @${domain}. ` +
+              `Kai piktavaliai bando siųsti suklastotus laiškus jūsų organizacijos vardu, gavėjų el. pašto serveriai juos ${policy === 'reject' ? 'automatiškai atmeta — jie net nepasiekia gavėjo' : 'perkelia į šlamšto aplanką'}. ` +
+              `Tai apsaugo jūsų darbuotojus, klientus ir partnerius nuo sukčiavimo el. paštu (phishing) per jūsų domeną.\n\n` +
+              `Tai viena svarbiausių el. pašto saugumo priemonių — daugelis Lietuvos organizacijų jos dar neturi.`,
+            recommendation_lt: 'Konfigūracija puiki — jokių veiksmų nereikia. Periodiškai tikrinkite DMARC ataskaitas, kad įsitikintumėte, jog teisėti laiškai nėra blokuojami.',
             nis2_article: null,
             evidence: { domain, dmarc_record: dmarc, policy },
           });
@@ -137,9 +141,14 @@ export async function scanMxtoolbox(domain: string): Promise<ScannerResult> {
       findings.push({
         module: 'mxtoolbox',
         severity: 'info',
-        title_lt: 'El. pašto saugumo konfigūracija — problemų nerasta',
-        description_lt: `Domeno ${domain} SPF, DMARC konfigūracija atitinka saugumo reikalavimus.`,
-        recommendation_lt: 'Tęskite periodinį stebėjimą.',
+        title_lt: 'El. pašto saugumo konfigūracija — viskas tvarkoje',
+        description_lt:
+          `Domeno ${domain} el. pašto saugumo konfigūracija atitinka geriausias praktikas. ` +
+          `SPF įrašas tinkamai apriboja, kas gali siųsti laiškus jūsų vardu, ` +
+          `o DMARC politika užtikrina, kad suklastoti laiškai bus blokuojami.\n\n` +
+          `Tai reiškia, kad jūsų organizacija yra apsaugota nuo el. pašto sukčiavimo (phishing) atakų, ` +
+          `kai piktavaliai bando apsimesti jūsų darbuotojais ar organizacija siunčiant suklastotus laiškus.`,
+        recommendation_lt: 'Konfigūracija puiki — jokių veiksmų nereikia. Periodiškai tikrinkite, ar SPF ir DMARC įrašai vis dar aktualūs (pvz., po el. pašto tiekėjo pakeitimo).',
         nis2_article: null,
         evidence: { domain, spf: spfRecord, dmarc_found: dmarcFound },
       });

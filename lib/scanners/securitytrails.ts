@@ -62,12 +62,29 @@ export async function scanSecuritytrails(domain: string): Promise<ScannerResult>
     }
 
     if (danglingSubdomains.length > 0) {
+      const subList = danglingSubdomains.slice(0, 10).map(sub =>
+        `• ${sub} — DNS A įrašas nurodo į neegzistuojantį serverį`
+      ).join('\n');
+      const moreStr = danglingSubdomains.length > 10 ? `\n...ir dar ${danglingSubdomains.length - 10} kabantys subdomenai.` : '';
+
       findings.push({
         module: 'securitytrails',
         severity: 'high',
         title_lt: `Rasti ${danglingSubdomains.length} kabantys subdomenai`,
-        description_lt: `Aptikti subdomenai, kurie nebeturi veikiančio DNS A įrašo: ${danglingSubdomains.slice(0, 10).join(', ')}${danglingSubdomains.length > 10 ? ` ir dar ${danglingSubdomains.length - 10}` : ''}. Kabantys subdomenai gali būti perimti piktavalių (subdomain takeover) ir panaudoti sukčiavimui ar kenkėjiškos programinės įrangos platinimui.`,
-        recommendation_lt: 'Pašalinkite nebenaudojamų subdomenų DNS įrašus. Jei subdomenai turėtų veikti — atkurkite jų A įrašus.',
+        description_lt:
+          `Jūsų organizacijos DNS sistemoje rasti subdomenai, kurie nebeveda į jokį veikiantį serverį — jie „kabo" tuščioje vietoje:\n` +
+          `${subList}${moreStr}\n\n` +
+          `Kodėl tai pavojinga: kai subdomenas nebeveda į jūsų serverį, piktavaliai gali užregistruoti serverį tuo pačiu adresu ir perimti subdomeną (tai vadinama „subdomain takeover"). ` +
+          `Tada jie gali sukurti suklastotą svetainę su jūsų organizacijos vardu (pvz., ${danglingSubdomains[0]}) ir ` +
+          `naudoti ją darbuotojų ar klientų apgaudinėjimui — rinkti slaptažodžius, platinti kenkėjišką programinę įrangą.\n\n` +
+          `Tai panašu į situaciją, kai jūsų organizacija turėjo biuro patalpas, išsikraustė, bet iškaba su organizacijos pavadinimu liko kaboti ant pastato. ` +
+          `Kitas asmuo gali atsikraustyti ir apsimesti jūsų organizacija.\n\n` +
+          `Verslo poveikis: reputacijos žala, klientų duomenų vagystė, reguliacinės baudos pagal KSĮ 11 str. 2 d. 1 p.`,
+        recommendation_lt:
+          `1. Perduokite šį sąrašą IT administratoriui ir paprašykite per 3 darbo dienas pašalinti nebereikalingus DNS įrašus.\n` +
+          `2. Kiekvienam subdomenui: jei jis naudojamas — atkurkite serverį; jei nenaudojamas — pašalinkite DNS A įrašą.\n` +
+          `3. Įveskite taisyklę: prieš išjungiant bet kokį serverį, pirmiausia turi būti pašalintas DNS įrašas.\n` +
+          `4. Kas ketvirtį peržiūrėkite subdomenų sąrašą ir pašalinkite nebenaudojamus.`,
         nis2_article: '11 str. 2 d. 1 p.',
         evidence: { domain, dangling_subdomains: danglingSubdomains, checked_count: sampleSubdomains.length },
       });
@@ -136,9 +153,12 @@ export async function scanSecuritytrails(domain: string): Promise<ScannerResult>
       findings.push({
         module: 'securitytrails',
         severity: 'info',
-        title_lt: 'SecurityTrails — problemų nerasta',
-        description_lt: `Domeno ${domain} subdomenų ir DNS istorijos analizė neparodė kritinių ar aukštų rizikų. Rasta ${subdomains.length} subdomenų, kabančių subdomenų neaptikta.`,
-        recommendation_lt: 'Tęskite periodinį stebėjimą.',
+        title_lt: 'Subdomenai ir DNS — viskas tvarkoje',
+        description_lt:
+          `Domeno ${domain} subdomenų ir DNS istorijos analizė neparodė jokių problemų. ` +
+          `Rasta ${subdomains.length} subdomenų — visi jie veda į veikiančius serverius, „kabančių" subdomenų neaptikta.\n\n` +
+          `Tai reiškia, kad piktavaliai negali perimti jūsų nebenaudojamų subdomenų ir apsimesti jūsų organizacija.`,
+        recommendation_lt: 'Jokių veiksmų nereikia. Rekomenduojame kas ketvirtį peržiūrėti subdomenų sąrašą ir pašalinti nebenaudojamus.',
         nis2_article: null,
         evidence: { domain, subdomain_count: subdomains.length, dangling_count: 0 },
       });

@@ -84,20 +84,37 @@ function buildReportHtml(data: ReportData): string {
       return order.indexOf(a.severity) - order.indexOf(b.severity);
     })
     .map(
-      (f) => `
-    <div style="border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin-bottom:16px;page-break-inside:avoid;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-        <h3 style="margin:0;font-size:16px;">${escapeHtml(f.title_lt)}</h3>
-        <span style="background:${severityColor(f.severity)};color:white;padding:2px 10px;border-radius:4px;font-size:13px;font-weight:600;">
+      (f) => {
+        const borderColor = severityColor(f.severity);
+        const descParagraphs = escapeHtml(f.description_lt)
+          .split(/\n\n/)
+          .map(p => `<p style="margin:6px 0;font-size:14px;line-height:1.6;">${p}</p>`)
+          .join('');
+        const recParagraphs = escapeHtml(f.recommendation_lt)
+          .split(/\n/)
+          .map(p => `<p style="margin:4px 0;font-size:14px;line-height:1.6;">${p}</p>`)
+          .join('');
+
+        return `
+    <div style="border:1px solid #e5e7eb;border-left:4px solid ${borderColor};border-radius:8px;padding:0;margin-bottom:20px;page-break-inside:avoid;">
+      <div style="padding:10px 16px;background:#f9fafb;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span style="background:${severityColor(f.severity)};color:white;padding:2px 10px;border-radius:4px;font-size:12px;font-weight:600;">
           ${SEVERITY_LABEL[f.severity] ?? f.severity}
         </span>
+        <span style="font-size:12px;color:#6b7280;background:white;padding:2px 8px;border-radius:4px;border:1px solid #e5e7eb;">${escapeHtml(f.module)}</span>
+        ${f.nis2_article ? `<span style="font-size:12px;color:#7c3aed;background:#f5f3ff;padding:2px 8px;border-radius:4px;border:1px solid #ddd6fe;">KSĮ ${escapeHtml(f.nis2_article)}</span>` : ''}
       </div>
-      <p style="margin:4px 0;"><strong>Modulis:</strong> ${escapeHtml(f.module)}</p>
-      <p style="margin:4px 0;"><strong>Aprašymas:</strong> ${escapeHtml(f.description_lt)}</p>
-      <p style="margin:4px 0;"><strong>Rekomenduojami veiksmai:</strong> ${escapeHtml(f.recommendation_lt)}</p>
-      ${f.nis2_article ? `<p style="margin:4px 0;"><strong>KSĮ straipsnis:</strong> ${escapeHtml(f.nis2_article)}</p>` : ''}
-      ${f.evidence ? `<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:13px;color:#6b7280;">Techniniai įrodymai</summary><pre style="background:#f9fafb;padding:8px;border-radius:4px;font-size:12px;overflow-x:auto;">${escapeHtml(JSON.stringify(f.evidence, null, 2))}</pre></details>` : ''}
-    </div>`,
+      <div style="padding:16px;">
+        <h3 style="margin:0 0 12px 0;font-size:16px;font-weight:600;">${escapeHtml(f.title_lt)}</h3>
+        <div style="margin-bottom:12px;">${descParagraphs}</div>
+        <div style="border-top:1px solid #e5e7eb;padding-top:12px;">
+          <p style="margin:0 0 4px 0;font-size:13px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:0.05em;">Rekomenduojami veiksmai</p>
+          ${recParagraphs}
+        </div>
+        ${f.evidence ? `<details style="margin-top:12px;"><summary style="cursor:pointer;font-size:13px;color:#6b7280;">Techninė informacija</summary><pre style="background:#f9fafb;padding:8px;border-radius:4px;font-size:11px;overflow-x:auto;margin-top:8px;">${escapeHtml(JSON.stringify(f.evidence, null, 2))}</pre></details>` : ''}
+      </div>
+    </div>`;
+      },
     )
     .join('\n');
 

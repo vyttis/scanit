@@ -88,9 +88,13 @@ export async function scanVirustotal(domain: string): Promise<ScannerResult> {
       findings.push({
         module: 'virustotal',
         severity: 'info',
-        title_lt: 'VirusTotal — domeno reputacija gera',
-        description_lt: `Domenas ${domain} neturi kenkėjiškų ar įtartinų pažymėjimų iš ${totalEngines} saugumo variklių.`,
-        recommendation_lt: 'Tęskite periodinį stebėjimą.',
+        title_lt: 'VirusTotal — domeno reputacija švari',
+        description_lt:
+          `Domenas ${domain} patikrintas ${totalEngines} saugumo variklių (antivirusinių programų ir saugumo tiekėjų) ir nė vienas iš jų nepažymėjo jo kaip kenkėjiško ar įtartino. ` +
+          `Tai reiškia, kad jūsų domenas nėra siejamas su kenkėjiška programine įranga, sukčiavimu ar kitomis grėsmėmis.\n\n` +
+          `Tai svarbu, nes blogas domeno reputacija gali sukelti el. laiškų blokavimą, ` +
+          `naršyklių perspėjimus lankytojams ir partnerių nepasitikėjimą.`,
+        recommendation_lt: 'Jokių veiksmų nereikia. Domeno reputacija puiki.',
         nis2_article: null,
         evidence: { domain, malicious_count: 0, suspicious_count: 0, total_engines: totalEngines },
       });

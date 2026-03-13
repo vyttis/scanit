@@ -2,9 +2,16 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { Finding } from '@/types/database';
 
 const SYSTEM_PROMPT =
-  'Tu esi kibernetinio saugumo ekspertas, rašantis ataskaitas lietuviškoms organizacijoms. ' +
-  'Rašyk aiškiai ir suprantamai — taip, kad IT vadovas, kuris nėra techninis specialistas, suprastų problemą ir žinotų, ką daryti. ' +
-  'Nenaudok žargono be paaiškinimo. Būk konkretus ir glaustas.';
+  'Tu esi kibernetinio saugumo ekspertas, rašantis ataskaitas lietuviškų organizacijų vadovams ir IT vadybininkams — ne technikams. ' +
+  'Kiekvienam radiniui privalai pateikti: ' +
+  '1. Ką tai reiškia paprastais žodžiais — be techninių terminų ar su jų paaiškinimu. ' +
+  '2. Kodėl tai pavojinga — konkretus scenarijus kas galėtų nutikti jei problema nebus išspręsta. ' +
+  '3. Koks verslo poveikis — duomenų praradimas, finansinė žala, reputacijos žala, reguliacinės baudos. ' +
+  '4. Kaip tai palyginti su KSĮ reikalavimais — kokia konkreti teisinė rizika. ' +
+  '5. Ką reikia padaryti — konkretūs žingsniai, ne bendri patarimai. ' +
+  'Rašyk taip, tarsi aiškintum savo direktoriui, kuris nėra techninis specialistas, bet supranta verslo rizikas. ' +
+  'Vengk žargono. Jei naudoji techninius terminus — visada paaiškink. ' +
+  'Būk konkretus: ne "atnaujinkite programinę įrangą" o "kreipkitės į IT administratorių su šiuo sąrašu ir paprašykite patvirtinimo kad visi atnaujinimai įdiegti per 30 dienų".';
 
 function getAnthropicClient(): Anthropic {
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -16,7 +23,7 @@ function getAnthropicClient(): Anthropic {
 
 /**
  * Generate a Lithuanian-language description for a single finding.
- * Each call is fully stateless — no accumulated history.
+ * Returns structured sections: what it is, why dangerous, business impact, remediation.
  */
 export async function generateFindingDescription(finding: {
   module: string;
@@ -27,19 +34,24 @@ export async function generateFindingDescription(finding: {
   const anthropic = getAnthropicClient();
 
   const prompt =
-    `Sugeneruok aprašymą ir rekomendaciją šiam kibernetinio saugumo pažeidimui:\n\n` +
+    `Sugeneruok detalų aprašymą ir rekomendaciją šiam kibernetinio saugumo radiniui:\n\n` +
     `Modulis: ${finding.module}\n` +
     `Sunkumas: ${finding.severity}\n` +
     `Pavadinimas: ${finding.title_lt}\n` +
     `Įrodymai (JSON): ${JSON.stringify(finding.evidence ?? {})}\n\n` +
     `Atsakyk JSON formatu:\n` +
     `{"description_lt": "...", "recommendation_lt": "..."}\n\n` +
-    `description_lt: aiškus paaiškinimas ką tai reiškia organizacijai (2-3 sakiniai).\n` +
-    `recommendation_lt: konkretūs veiksmai problemai išspręsti (2-3 sakiniai).`;
+    `description_lt turi turėti šias dalis (naudok \\n\\n tarp dalių):\n` +
+    `- KAS TAI: aiškus paaiškinimas paprastais žodžiais (1-2 sakiniai)\n` +
+    `- KODĖL TAI PAVOJINGA: konkretus scenarijus kas galėtų nutikti (2-3 sakiniai)\n` +
+    `- VERSLO POVEIKIS: duomenų praradimas, finansinė žala, reputacijos žala, reguliacinės baudos (1-2 sakiniai)\n\n` +
+    `recommendation_lt turi turėti konkrečius sunumeruotus žingsnius (1. ... 2. ... 3. ...), ` +
+    `su terminais ir atsakingais asmenimis. Ne bendri patarimai, o konkretūs veiksmai.`;
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 500,
+    max_tokens: 800,
+    temperature: 0.3,
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: prompt }],
   });
@@ -56,7 +68,7 @@ export async function generateFindingDescription(finding: {
     };
   } catch {
     return {
-      description_lt: text.slice(0, 500),
+      description_lt: text.slice(0, 800),
       recommendation_lt: 'Kreipkitės į IT specialistą dėl šio pažeidimo šalinimo.',
     };
   }
@@ -85,17 +97,23 @@ export async function generateExecutiveSummary(
     .join('\n');
 
   const prompt =
-    `Parašyk trumpą vykdomąją santrauką (3-5 sakiniai) kibernetinio saugumo ataskaitai.\n\n` +
+    `Parašyk trumpą vykdomąją santrauką (4-6 sakiniai) kibernetinio saugumo ataskaitai.\n\n` +
     `Organizacija: ${orgName}\n` +
     `Rizikos balas: ${riskScore}/100\n` +
     `Kritiniai: ${criticalCount}, Aukšti: ${highCount}, Vidutiniai: ${mediumCount}, Žemi: ${lowCount}\n` +
     `Iš viso rastų trūkumų: ${findings.length}\n\n` +
     `Svarbiausios problemos:\n${topFindings || 'Kritinių ar aukšto lygio pažeidimų nerasta.'}\n\n` +
-    `Santrauka turi būti profesionali, dalykiška, skirta IT vadovui. Rašyk tik santraukos tekstą, be papildomų komentarų.`;
+    `Santrauka turi:\n` +
+    `- Pradėti nuo bendro saugumo būklės vertinimo\n` +
+    `- Pabrėžti svarbiausias problemas paprastais žodžiais\n` +
+    `- Nurodyti verslo rizikas (baudos, duomenų praradimas, reputacija)\n` +
+    `- Baigti konkrečiu kvietimu veikti su terminais\n\n` +
+    `Rašyk profesionaliai, dalykiškai, skirta IT vadovui ir direktoriui. Tik santraukos tekstas, be papildomų komentarų.`;
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 500,
+    max_tokens: 600,
+    temperature: 0.3,
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: prompt }],
   });

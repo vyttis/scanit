@@ -108,9 +108,13 @@ export async function scanAbuseipdb(domain: string): Promise<ScannerResult> {
       findings.push({
         module: 'abuseipdb',
         severity: 'info',
-        title_lt: 'IP adreso reputacija gera',
-        description_lt: `IP adresas ${ip} (${domain}) neturi piktnaudžiavimo pranešimų AbuseIPDB duomenų bazėje.`,
-        recommendation_lt: 'Tęskite periodinį stebėjimą.',
+        title_lt: 'IP adreso reputacija gera — piktnaudžiavimo nenustatyta',
+        description_lt:
+          `IP adresas ${ip} (${domain}) neturi jokių piktnaudžiavimo pranešimų tarptautinėje AbuseIPDB duomenų bazėje. ` +
+          `Tai reiškia, kad per pastaruosius 90 dienų niekas nepranešė apie kenkėjišką veiklą iš jūsų serverio — ` +
+          `jūsų serveris nėra naudojamas atakoms, spam siuntimui ar kitai neteisėtai veiklai.\n\n` +
+          `Tai teigiamas ženklas — jūsų serverio saugumas šiuo atžvilgiu yra geras.`,
+        recommendation_lt: 'Jokių veiksmų nereikia. Tęskite periodinį stebėjimą — AbuseIPDB tikrinimas padeda anksti pastebėti, jei jūsų serveris būtų pažeistas.',
         nis2_article: null,
         evidence: { domain, ip, abuse_confidence: 0, total_reports: 0 },
       });

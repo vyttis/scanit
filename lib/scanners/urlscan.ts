@@ -100,9 +100,12 @@ export async function scanUrlscan(domain: string): Promise<ScannerResult> {
       findings.push({
         module: 'urlscan',
         severity: 'info',
-        title_lt: 'URLScan — sukčiavimo / kenkėjiškos veiklos neaptikta',
-        description_lt: `Domenas ${domain} neturi kenkėjiškų pažymėjimų URLScan.io duomenų bazėje.`,
-        recommendation_lt: 'Tęskite periodinį stebėjimą.',
+        title_lt: 'URLScan — sukčiavimo veiklos neaptikta',
+        description_lt:
+          `Domenas ${domain} patikrintas URLScan.io duomenų bazėje ir neturi jokių kenkėjiškų ar sukčiavimo (phishing) pažymėjimų. ` +
+          `Tai reiškia, kad jūsų domenas nėra naudojamas kenkėjiškai veiklai ir nebuvo aptiktų sukčiavimo svetainių, susietų su jūsų organizacija.\n\n` +
+          `Taip pat nerasta „panašių domenų" (typosquatting), kuriuos piktavaliai galėtų naudoti apsimetant jūsų organizacija.`,
+        recommendation_lt: 'Jokių veiksmų nereikia. Periodiškai tikrinkite, ar nepasirodė panašūs domenai, kuriais galėtų apgaudinėti jūsų klientus.',
         nis2_article: null,
         evidence: { domain, total_scans: results.length },
       });

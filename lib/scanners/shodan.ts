@@ -74,16 +74,90 @@ export async function scanShodan(domain: string): Promise<ScannerResult> {
     const hostData = await hostRes.json();
     const findings: ScannerFinding[] = [];
 
-    // Check for CVEs (vulns)
+    // Check for CVEs (vulns) — enrich top CVEs with CVSS data
     if (hostData.vulns && hostData.vulns.length > 0) {
+      // Fetch details for top 5 CVEs from cve.circl.lu (free, no auth)
+      const topCves = hostData.vulns.slice(0, 5);
+      const cveDetails: Array<{
+        id: string;
+        cvss: number | null;
+        summary: string;
+        exploited: boolean;
+      }> = [];
+
+      const cveChecks = await Promise.allSettled(
+        topCves.map(async (cveId: string) => {
+          try {
+            const cveRes = await fetchWithTimeout(
+              `https://cve.circl.lu/api/cve/${cveId}`,
+              {},
+              5_000,
+            );
+            if (cveRes.ok) {
+              const cveData = await cveRes.json();
+              return {
+                id: cveId,
+                cvss: cveData.cvss ?? cveData.cvss_score ?? null,
+                summary: cveData.summary || cveData.description || '',
+                exploited: !!(cveData.exploit_published || cveData.references?.some((r: string) =>
+                  r.includes('exploit') || r.includes('metasploit'))),
+              };
+            }
+          } catch {
+            // Ignore individual CVE lookup failures
+          }
+          return { id: cveId, cvss: null, summary: '', exploited: false };
+        }),
+      );
+
+      for (const result of cveChecks) {
+        if (result.status === 'fulfilled') {
+          cveDetails.push(result.value);
+        }
+      }
+
+      // Sort by CVSS score (highest first)
+      cveDetails.sort((a, b) => (b.cvss ?? 0) - (a.cvss ?? 0));
+
+      // Build detailed CVE list for description
+      const cveList = cveDetails.map((cve) => {
+        const cvssLabel = cve.cvss !== null
+          ? (cve.cvss >= 9 ? 'Kritinis' : cve.cvss >= 7 ? 'Aukštas' : cve.cvss >= 4 ? 'Vidutinis' : 'Žemas')
+          : 'Nežinomas';
+        const cvssStr = cve.cvss !== null ? ` (CVSS: ${cve.cvss}, ${cvssLabel})` : '';
+        const exploitStr = cve.exploited ? ' — ŽINOMAS IŠNAUDOJIMAS' : '';
+        const summaryStr = cve.summary ? `: ${cve.summary.slice(0, 150)}` : '';
+        return `${cve.id}${cvssStr}${exploitStr}${summaryStr}`;
+      }).join('\n');
+
+      const remainingCount = hostData.vulns.length - topCves.length;
+      const remainingStr = remainingCount > 0 ? `\n...ir dar ${remainingCount} pažeidžiamumų.` : '';
+
       findings.push({
         module: 'shodan',
         severity: 'critical',
         title_lt: `Rastos žinomos pažeidžiamumo vietos (CVE) — ${hostData.vulns.length} vnt.`,
-        description_lt: `IP adrese ${ip} (${domain}) aptiktos žinomos pažeidžiamumo vietos: ${hostData.vulns.slice(0, 10).join(', ')}${hostData.vulns.length > 10 ? ` ir dar ${hostData.vulns.length - 10}` : ''}. Šios pažeidžiamumo vietos gali būti išnaudojamos piktavalių atakoms vykdyti.`,
-        recommendation_lt: 'Skubiai atnaujinkite programinę įrangą ir operacinę sistemą. Patikrinkite, ar visi aptikti CVE yra pataisyti naujausiais saugumo atnaujinimais.',
+        description_lt:
+          `Jūsų serverio IP adrese ${ip} (${domain}) aptiktos žinomos programinės įrangos pažeidžiamumo vietos. ` +
+          `Tai reiškia, kad jūsų serveryje veikianti programinė įranga turi saugumo spragų, apie kurias žino ir piktavaliai. ` +
+          `Jei šios spragos nebus uždarytos — piktavaliai gali jas panaudoti norėdami perimti serverio kontrolę, pavogti duomenis arba sustabdyti paslaugų veikimą.\n\n` +
+          `Svarbiausios pažeidžiamumo vietos:\n${cveList}${remainingStr}\n\n` +
+          `Verslo poveikis: pagal KSĮ 11 str. 2 d. 5 p. organizacija privalo užtikrinti tinklų ir informacinių sistemų saugumą. ` +
+          `Neištaisytos pažeidžiamumo vietos gali būti traktuojamos kaip KSĮ pažeidimas, už kurį gresia baudos iki 10 mln. EUR arba 2% metinės apyvartos.`,
+        recommendation_lt:
+          `1. Perduokite šį CVE sąrašą IT administratoriui ir paprašykite per 7 dienas pateikti atnaujinimo planą.\n` +
+          `2. Pirmiausia taisykite CVE su aukščiausiu CVSS balu ir žinomu išnaudojimu (pažymėti "ŽINOMAS IŠNAUDOJIMAS").\n` +
+          `3. Atnaujinkite visą serverio programinę įrangą iki naujausių versijų per 30 dienų.\n` +
+          `4. Jei atnaujinti neįmanoma — apribokite prieigą prie pažeidžiamų paslaugų per užkardą (firewall).\n` +
+          `5. Po atnaujinimo pakartokite skenavimą, kad patvirtintumėte, jog pažeidžiamumai pašalinti.`,
         nis2_article: '11 str. 2 d. 5 p.',
-        evidence: { ip, vulns: hostData.vulns, domain },
+        evidence: {
+          ip,
+          domain,
+          vulns: hostData.vulns,
+          cve_details: cveDetails,
+          total_cve_count: hostData.vulns.length,
+        },
       });
     }
 
@@ -105,8 +179,17 @@ export async function scanShodan(domain: string): Promise<ScannerResult> {
         module: 'shodan',
         severity: 'high',
         title_lt: `Eksponuotos jautrios paslaugos — ${exposedSensitive.length} prievadai`,
-        description_lt: `IP adrese ${ip} (${domain}) rasti atidaryti jautrūs prievadai: ${portList}. Šios paslaugos neturėtų būti tiesiogiai pasiekiamos iš interneto, nes tai padidina atakos paviršių ir galimybę piktavaliams pasiekti jūsų sistemas.`,
-        recommendation_lt: 'Uždarykite nereikalingus prievadus naudodami užkardą (firewall). Jei paslaugos būtinos — apribokite prieigą tik iš konkrečių IP adresų arba naudokite VPN.',
+        description_lt:
+          `Jūsų serveryje ${ip} (${domain}) rasti atviri prievadai, kurie leidžia bet kam internete bandyti prisijungti prie jautrių paslaugų: ${portList}.\n\n` +
+          `Tai kaip palikti atrakintus durų užraktus — net jei turite slaptažodį, pats faktas, kad durys matomos visiems, kviečia bandyti jas atidaryti. ` +
+          `Automatizuoti įrankiai nuolat skenuoja internetą ieškodami tokių atvirų prievadų ir bando prisijungti naudodami žinomus slaptažodžius ar pažeidžiamumus.\n\n` +
+          `Verslo poveikis: per šiuos prievadus piktavaliai gali perimti jūsų serverį, pasiekti duomenų bazes, ` +
+          `šifruoti duomenis (ransomware) arba naudoti serverį atakoms prieš kitas organizacijas.`,
+        recommendation_lt:
+          `1. Nedelsdami kreipkitės į IT administratorių ir paprašykite užblokuoti šiuos prievadus per užkardą (firewall): ${portList}.\n` +
+          `2. Jei paslaugos reikalingos nuotoliniam darbui (pvz., SSH, RDP) — nustatykite VPN prieigą ir leiskite jungtis tik per VPN.\n` +
+          `3. Pakeiskite visus numatytuosius slaptažodžius šiose paslaugose.\n` +
+          `4. Terminas: per 7 dienas užblokuoti nereikalingus prievadus, per 14 dienų — nustatyti VPN.`,
         nis2_article: '11 str. 2 d. 5 p.',
         evidence: { ip, exposed_ports: exposedSensitive, all_ports: ports, domain },
       });
