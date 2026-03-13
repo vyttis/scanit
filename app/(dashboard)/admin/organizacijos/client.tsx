@@ -60,7 +60,7 @@ export function AdminOrganizationsClient({ organizations }: { organizations: Org
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
-  const [scanMessage, setScanMessage] = useState<{ orgId: string; text: string; type: 'success' | 'error' } | null>(null);
+  const [scanMessage, setScanMessage] = useState<{ orgId: string; text: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -179,8 +179,28 @@ export function AdminOrganizationsClient({ organizations }: { organizations: Org
 
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        setScanMessage({ orgId, text: 'Skenavimas pradėtas.', type: 'success' });
-        router.refresh();
+        setScanMessage({ orgId, text: 'Skenavimas pradėtas. Vyksta serveryje — galite uždaryti langą, rezultatai bus matomi grįžus.', type: 'info' });
+        // Poll for completion
+        if (data.scan_id) {
+          const pollInterval = setInterval(async () => {
+            try {
+              const statusRes = await fetch(`/api/scan?id=${data.scan_id}`);
+              if (statusRes.ok) {
+                const statusData = await statusRes.json();
+                if (statusData.status === 'completed') {
+                  clearInterval(pollInterval);
+                  setScanMessage({ orgId, text: 'Skenavimas baigtas.', type: 'success' });
+                  router.refresh();
+                } else if (statusData.status === 'failed') {
+                  clearInterval(pollInterval);
+                  setScanMessage({ orgId, text: 'Skenavimas nepavyko.', type: 'error' });
+                }
+              }
+            } catch { /* continue polling */ }
+          }, 5000);
+          // Stop polling after 5 minutes max
+          setTimeout(() => clearInterval(pollInterval), 300000);
+        }
       } else {
         setScanMessage({ orgId, text: data.error || 'Klaida paleidžiant skenavimą.', type: 'error' });
       }
@@ -428,7 +448,7 @@ interface OrgRowProps {
   onDelete: () => void;
   onScan: () => void;
   isLoading: boolean;
-  scanMessage: { text: string; type: 'success' | 'error' } | null;
+  scanMessage: { text: string; type: 'success' | 'error' | 'info' } | null;
 }
 
 function OrgRow({
@@ -525,7 +545,14 @@ function OrgRow({
 
             {/* Scan message */}
             {scanMessage && (
-              <span className={`text-xs ${scanMessage.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+              <span className={`text-xs ${
+                scanMessage.type === 'success' ? 'text-green-600' :
+                scanMessage.type === 'info' ? 'text-blue-600' :
+                'text-red-600'
+              }`}>
+                {scanMessage.type === 'info' && (
+                  <span className="inline-block w-2 h-2 rounded-full bg-blue-500 animate-pulse mr-1 align-middle" />
+                )}
                 {scanMessage.text}
               </span>
             )}

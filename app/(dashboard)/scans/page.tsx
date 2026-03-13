@@ -6,7 +6,9 @@ export default async function ScansPage() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const { data: profile } = await supabase
+  // Use service role for profile read — superadmin has org_id=NULL which breaks RLS
+  const serviceClient = createServiceRoleClient();
+  const { data: profile } = await serviceClient
     .from('profiles')
     .select('org_id, role')
     .eq('id', user.id)

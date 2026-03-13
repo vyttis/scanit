@@ -10,9 +10,16 @@ const ACTION_LABELS: Record<string, string> = {
   login_failed: 'Nesėkmingas prisijungimas',
   domain_verified: 'Domenas patvirtintas',
   org_registered: 'Organizacija užregistruota',
+  org_created: 'Organizacija sukurta',
+  org_verified: 'Organizacija patvirtinta',
+  org_unverified: 'Organizacijos patvirtinimas atšauktas',
+  org_deleted: 'Organizacija ištrinta',
+  org_updated: 'Organizacija atnaujinta',
   email_updated: 'El. paštas atnaujintas',
   user_approved: 'Vartotojas patvirtintas',
   user_rejected: 'Vartotojas atmestas',
+  user_suspended: 'Vartotojas sustabdytas',
+  role_changed: 'Vartotojo rolė pakeista',
 };
 
 function KpiCard({
@@ -129,16 +136,22 @@ export default async function AdminDashboardPage() {
 
   const [
     orgsResult,
+    verifiedOrgsResult,
     usersResult,
     pendingResult,
+    approvedUsersResult,
     scansThisMonthResult,
     reportsThisMonthResult,
     latestReportsResult,
     auditLogResult,
+    recentOrgsResult,
+    activeScansResult,
   ] = await Promise.all([
     serviceClient.from('organizations').select('id', { count: 'exact', head: true }),
+    serviceClient.from('organizations').select('id', { count: 'exact', head: true }).eq('verified', true),
     serviceClient.from('profiles').select('id', { count: 'exact', head: true }),
     serviceClient.from('profiles').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+    serviceClient.from('profiles').select('id', { count: 'exact', head: true }).eq('status', 'approved'),
     serviceClient.from('scans').select('id', { count: 'exact', head: true }).gte('created_at', startOfMonth),
     serviceClient.from('reports').select('id', { count: 'exact', head: true }).gte('created_at', startOfMonth),
     serviceClient.from('reports').select('risk_score, org_id').order('created_at', { ascending: false }),
@@ -147,13 +160,28 @@ export default async function AdminDashboardPage() {
       .select('id, action, created_at, user_id, org_id')
       .order('created_at', { ascending: false })
       .limit(20),
+    serviceClient
+      .from('organizations')
+      .select('id, name, domain, verified, sector, contact_email, plan, created_at')
+      .order('created_at', { ascending: false })
+      .limit(5),
+    serviceClient
+      .from('scans')
+      .select('id, org_id, status, created_at, organizations(name)')
+      .in('status', ['queued', 'running'])
+      .order('created_at', { ascending: false }),
   ]);
 
   const totalOrgs = orgsResult.count ?? 0;
+  const verifiedOrgs = verifiedOrgsResult.count ?? 0;
+  const unverifiedOrgs = totalOrgs - verifiedOrgs;
   const totalUsers = usersResult.count ?? 0;
   const pendingUsers = pendingResult.count ?? 0;
+  const approvedUsers = approvedUsersResult.count ?? 0;
   const scansThisMonth = scansThisMonthResult.count ?? 0;
   const reportsThisMonth = reportsThisMonthResult.count ?? 0;
+  const recentOrgs = recentOrgsResult.data ?? [];
+  const activeScans = activeScansResult.data ?? [];
 
   // Calculate average risk score from latest report per org
   const latestReportsByOrg = new Map<string, number>();
@@ -246,6 +274,18 @@ export default async function AdminDashboardPage() {
     </svg>
   );
 
+  const verifiedIcon = (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  );
+
+  const unverifiedIcon = (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  );
+
   const usersIcon = (
     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
@@ -281,14 +321,78 @@ export default async function AdminDashboardPage() {
       <AdminNav />
       <h1 className="text-2xl font-bold text-gray-900">Administravimo skydelis</h1>
 
-      {/* KPI Cards — 2x3 grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {/* KPI Cards — 2 rows */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard icon={orgIcon} label="Viso organizacijų" value={totalOrgs} />
-        <KpiCard icon={usersIcon} label="Viso vartotojų" value={totalUsers} />
+        <KpiCard icon={verifiedIcon} label="Patvirtintos" value={verifiedOrgs} />
+        <KpiCard icon={unverifiedIcon} label="Nepatvirtintos" value={unverifiedOrgs} />
+        <KpiCard icon={usersIcon} label="Viso vartotojų" value={`${approvedUsers} / ${totalUsers}`} />
         <KpiCard icon={pendingIcon} label="Laukia patvirtinimo" value={pendingUsers} />
         <KpiCard icon={scanIcon} label="Skenavimai šį mėnesį" value={scansThisMonth} />
         <KpiCard icon={reportIcon} label="Ataskaitos šį mėnesį" value={reportsThisMonth} />
-        <KpiCard icon={riskIcon} label="Vidutinis rizikos balas" value={avgRiskScore} />
+        <KpiCard icon={riskIcon} label="Vid. rizikos balas" value={avgRiskScore} />
+      </div>
+
+      {/* Active scans alert */}
+      {activeScans.length > 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <h3 className="text-sm font-semibold text-blue-800 mb-2">Aktyvūs skenavimai ({activeScans.length})</h3>
+          <div className="space-y-1">
+            {activeScans.map((scan) => (
+              <div key={scan.id} className="flex items-center gap-3 text-sm text-blue-700">
+                <span className="inline-block w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                <span className="font-medium">
+                  {(scan as Record<string, unknown>).organizations
+                    ? ((scan as Record<string, unknown>).organizations as { name: string }).name
+                    : '—'}
+                </span>
+                <span className="text-blue-500">
+                  {scan.status === 'queued' ? 'Eilėje' : 'Vykdomas'}
+                </span>
+                <span className="text-blue-400 text-xs">
+                  {new Date(scan.created_at).toLocaleTimeString('lt-LT', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Recent organizations */}
+      <div className="bg-white rounded-lg shadow">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-gray-900">Naujausios organizacijos</h3>
+          <a href="/admin/organizacijos" className="text-sm text-blue-600 hover:text-blue-800">
+            Visos &rarr;
+          </a>
+        </div>
+        <div className="divide-y divide-gray-100">
+          {recentOrgs.length === 0 ? (
+            <div className="px-6 py-6 text-center text-sm text-gray-400">Organizacijų nėra</div>
+          ) : (
+            recentOrgs.map((org) => (
+              <div key={org.id} className="px-6 py-3 flex items-center justify-between">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className={`inline-block w-2.5 h-2.5 rounded-full flex-shrink-0 ${org.verified ? 'bg-green-500' : 'bg-yellow-500'}`} />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">{org.name}</p>
+                    <p className="text-xs text-gray-500">{org.domain}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4 flex-shrink-0">
+                  {org.plan && (
+                    <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">
+                      {org.plan === 'professional' ? 'Profesionalus' : 'Pagrindinis'}
+                    </span>
+                  )}
+                  <span className="text-xs text-gray-400">
+                    {new Date(org.created_at).toLocaleDateString('lt-LT')}
+                  </span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </div>
 
       {/* Charts */}
