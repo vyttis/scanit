@@ -1,15 +1,18 @@
-import chromium from '@sparticuz/chromium';
+import chromium from '@sparticuz/chromium-min';
 import puppeteerCore from 'puppeteer-core';
+
+// Remote Chromium binary for Vercel serverless (not bundled locally)
+const CHROMIUM_PACK_URL =
+  'https://github.com/Sparticuz/chromium/releases/download/v131.0.1/chromium-v131.0.1-pack.tar';
 
 /**
  * Convert an HTML string to a PDF buffer using headless Chromium.
- * Uses @sparticuz/chromium for Vercel/Lambda compatibility.
+ * Uses @sparticuz/chromium-min with remote binary for Vercel compatibility.
  */
 export async function htmlToPdf(html: string): Promise<Buffer> {
   const browser = await puppeteerCore.launch({
     args: chromium.args,
-    defaultViewport: { width: 1280, height: 720 },
-    executablePath: await chromium.executablePath(),
+    executablePath: await chromium.executablePath(CHROMIUM_PACK_URL),
     headless: true,
   });
 

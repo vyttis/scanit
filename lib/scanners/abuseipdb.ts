@@ -2,15 +2,14 @@ import type { ScannerResult, ScannerFinding } from './types';
 import { fetchWithTimeout } from './types';
 import { resolve } from 'dns/promises';
 
-const ABUSEIPDB_API_KEY = process.env.ABUSEIPDB_API_KEY;
-
 /**
  * AbuseIPDB scanner — checks IP abuse reports.
  * Severity: High if abuse confidence >50%.
  * KSĮ: Art. 11(2)(e) — tinklų saugumas
  */
 export async function scanAbuseipdb(domain: string): Promise<ScannerResult> {
-  if (!ABUSEIPDB_API_KEY) {
+  const apiKey = process.env.ABUSEIPDB_API_KEY?.trim();
+  if (!apiKey) {
     return { module: 'abuseipdb', success: false, findings: [], error: 'ABUSEIPDB_API_KEY not configured' };
   }
 
@@ -51,17 +50,23 @@ export async function scanAbuseipdb(domain: string): Promise<ScannerResult> {
       };
     }
 
+    const url = `https://api.abuseipdb.com/api/v2/check?ipAddress=${encodeURIComponent(ip)}&maxAgeInDays=90&verbose`;
+    console.log(`[abuseipdb] GET ${url}`);
     const res = await fetchWithTimeout(
-      `https://api.abuseipdb.com/api/v2/check?ipAddress=${encodeURIComponent(ip)}&maxAgeInDays=90&verbose`,
+      url,
       {
         headers: {
-          Key: ABUSEIPDB_API_KEY,
+          Key: apiKey,
           Accept: 'application/json',
         },
       },
+      15_000,
     );
 
+    console.log(`[abuseipdb] Response: ${res.status}`);
     if (!res.ok) {
+      const errBody = await res.text().catch(() => '');
+      console.error(`[abuseipdb] Error: ${errBody.slice(0, 300)}`);
       return { module: 'abuseipdb', success: false, findings: [], error: `AbuseIPDB API returned: ${res.status}` };
     }
 

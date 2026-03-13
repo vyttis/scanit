@@ -10,8 +10,9 @@ import type { ScannerFunction, ScannerResult } from './types';
 
 export type { ScannerResult, ScannerFinding } from './types';
 
-/** Max time (ms) any single scanner is allowed to run. */
-const SCANNER_TIMEOUT_MS = 30_000;
+/** Max time (ms) any single scanner is allowed to run.
+ * SSL Labs needs up to 90s (5 polls × 10s + 30s retry for 529). */
+const SCANNER_TIMEOUT_MS = 100_000;
 
 /**
  * All scanner modules, keyed by module name.

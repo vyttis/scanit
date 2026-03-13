@@ -1,27 +1,33 @@
 import type { ScannerResult, ScannerFinding } from './types';
 import { fetchWithTimeout } from './types';
 
-const VIRUSTOTAL_API_KEY = process.env.VIRUSTOTAL_API_KEY;
-
 /**
  * VirusTotal scanner — checks domain/IP reputation, malware associations.
  * Severity: Critical if flagged by 3+ vendors.
  * KSĮ: Art. 11(2)(e) — tinklų saugumas
  */
 export async function scanVirustotal(domain: string): Promise<ScannerResult> {
-  if (!VIRUSTOTAL_API_KEY) {
+  // Read at call time to ensure env vars are available in serverless
+  const apiKey = process.env.VIRUSTOTAL_API_KEY?.trim();
+  if (!apiKey) {
     return { module: 'virustotal', success: false, findings: [], error: 'VIRUSTOTAL_API_KEY not configured' };
   }
 
   try {
+    const url = `https://www.virustotal.com/api/v3/domains/${domain}`;
+    console.log(`[virustotal] GET ${url} (key length: ${apiKey.length})`);
     const res = await fetchWithTimeout(
-      `https://www.virustotal.com/api/v3/domains/${encodeURIComponent(domain)}`,
+      url,
       {
-        headers: { 'x-apikey': VIRUSTOTAL_API_KEY },
+        headers: { 'x-apikey': apiKey },
       },
+      15_000,
     );
 
+    console.log(`[virustotal] Response: ${res.status}`);
     if (!res.ok) {
+      const errBody = await res.text().catch(() => '');
+      console.error(`[virustotal] Error: ${errBody.slice(0, 300)}`);
       return { module: 'virustotal', success: false, findings: [], error: `VirusTotal API returned: ${res.status}` };
     }
 

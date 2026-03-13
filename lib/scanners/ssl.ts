@@ -2,38 +2,108 @@ import type { ScannerResult, ScannerFinding } from './types';
 import { fetchWithTimeout } from './types';
 import { formatLithuanianDate } from '@/lib/utils/date';
 
+const MAX_POLLS = 5;
+const POLL_INTERVAL_MS = 10_000;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * SSL Labs scanner — checks certificate validity, expiry, cipher strength.
  * Severity: Critical if expired, High if expiring <30 days or weak cipher.
  * KSĮ: Art. 11(2)(e) — tinklų saugumas
  * Note: SSL Labs API is free and doesn't require an API key.
+ *
+ * The API is asynchronous — starts analysis, then polls until ready.
  */
 export async function scanSsl(domain: string): Promise<ScannerResult> {
   try {
-    // Start analysis (startNew=on forces new scan, but we use fromCache=on for speed)
-    const analyzeRes = await fetchWithTimeout(
-      `https://api.ssllabs.com/api/v3/analyze?host=${encodeURIComponent(domain)}&fromCache=on&maxAge=24&all=done`,
-    );
+    // Start or fetch cached analysis
+    const baseUrl = `https://api.ssllabs.com/api/v3/analyze?host=${encodeURIComponent(domain)}&all=done`;
+    console.log(`[ssl] GET ${baseUrl}`);
 
-    if (!analyzeRes.ok) {
-      return { module: 'ssl', success: false, findings: [], error: `SSL Labs API returned: ${analyzeRes.status}` };
+    let data: Record<string, unknown> | null = null;
+
+    for (let attempt = 0; attempt <= MAX_POLLS; attempt++) {
+      const url = attempt === 0 ? `${baseUrl}&fromCache=on&maxAge=72` : baseUrl;
+      const res = await fetchWithTimeout(url, {}, 20_000);
+      console.log(`[ssl] Poll ${attempt}: status ${res.status}`);
+
+      // 529 = overloaded — wait 30s and retry once
+      if (res.status === 529) {
+        console.log(`[ssl] Overloaded (529), waiting 30s and retrying once...`);
+        await sleep(30_000);
+        const retryRes = await fetchWithTimeout(url, {}, 20_000);
+        console.log(`[ssl] Retry after 529: status ${retryRes.status}`);
+        if (!retryRes.ok) {
+          return {
+            module: 'ssl',
+            success: true,
+            findings: [{
+              module: 'ssl',
+              severity: 'info',
+              title_lt: 'SSL Labs paslauga šiuo metu perkrauta',
+              description_lt: `SSL Labs API šiuo metu yra perkrautas ir negali atlikti analizės domenui ${domain}. Tai yra laikina problema iš SSL Labs pusės.`,
+              recommendation_lt: 'Pakartokite skenavimą vėliau, kad gautumėte SSL/TLS rezultatus.',
+              nis2_article: null,
+              evidence: { domain, status: retryRes.status },
+            }],
+          };
+        }
+        data = await retryRes.json();
+        break;
+      }
+
+      if (res.status === 429) {
+        return {
+          module: 'ssl',
+          success: true,
+          findings: [{
+            module: 'ssl',
+            severity: 'info',
+            title_lt: 'SSL Labs API limitas pasiektas',
+            description_lt: `SSL Labs API užklausų limitas pasiektas skenojant domeną ${domain}. Tai yra laikina problema.`,
+            recommendation_lt: 'Pakartokite skenavimą vėliau.',
+            nis2_article: null,
+            evidence: { domain, status: 429 },
+          }],
+        };
+      }
+
+      if (!res.ok) {
+        return { module: 'ssl', success: false, findings: [], error: `SSL Labs API returned: ${res.status}` };
+      }
+
+      data = await res.json();
+
+      // Check if analysis is complete
+      const status = data?.status as string | undefined;
+      if (status === 'READY' || status === 'ERROR') {
+        break;
+      }
+
+      // Still in progress — poll again
+      if (attempt < MAX_POLLS) {
+        console.log(`[ssl] Analysis in progress (${status}), polling in ${POLL_INTERVAL_MS / 1000}s...`);
+        await sleep(POLL_INTERVAL_MS);
+      }
     }
 
-    const data = await analyzeRes.json();
+    if (!data) {
+      return { module: 'ssl', success: false, findings: [], error: 'SSL Labs: no data received' };
+    }
+
     const findings: ScannerFinding[] = [];
 
-    // If analysis not ready, try polling once more
+    // Still not ready after all polls
     if (data.status === 'IN_PROGRESS' || data.status === 'DNS') {
-      // Start a new scan and report what we know
-      await fetchWithTimeout(
-        `https://api.ssllabs.com/api/v3/analyze?host=${encodeURIComponent(domain)}&startNew=on`,
-      );
-
+      console.log(`[ssl] Timeout: analysis still in progress after ${MAX_POLLS} polls`);
       findings.push({
         module: 'ssl',
         severity: 'info',
-        title_lt: 'SSL/TLS analizė vykdoma',
-        description_lt: `SSL Labs analizė domenui ${domain} buvo pradėta. Rezultatai bus pasiekiami kitame skenavime.`,
+        title_lt: 'SSL/TLS analizė dar nebaigta',
+        description_lt: `SSL Labs analizė domenui ${domain} buvo pradėta, bet dar nebaigta. Rezultatai bus pasiekiami kitame skenavime.`,
         recommendation_lt: 'Pakartokite skenavimą po kelių minučių, kad gautumėte pilnus SSL/TLS rezultatus.',
         nis2_article: null,
         evidence: { domain, status: data.status },
@@ -55,12 +125,11 @@ export async function scanSsl(domain: string): Promise<ScannerResult> {
     }
 
     // Process endpoints
-    const endpoints = data.endpoints || [];
+    const endpoints = (data.endpoints || []) as Array<Record<string, unknown>>;
     for (const endpoint of endpoints) {
       if (endpoint.statusMessage === 'Ready') {
-        const grade = endpoint.grade || 'Unknown';
+        const grade = (endpoint.grade as string) || 'Unknown';
 
-        // Check grade
         if (grade === 'F' || grade === 'T') {
           findings.push({
             module: 'ssl',
@@ -106,35 +175,33 @@ export async function scanSsl(domain: string): Promise<ScannerResult> {
     }
 
     // Check certificate expiry from cert data
-    if (data.certs && data.certs.length > 0) {
-      for (const cert of data.certs) {
-        const notAfter = cert.notAfter;
-        if (notAfter) {
-          const expiryDate = new Date(notAfter);
-          const now = new Date();
-          const daysUntilExpiry = Math.ceil((expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    const certs = (data.certs || []) as Array<{ notAfter?: number }>;
+    for (const cert of certs) {
+      if (cert.notAfter) {
+        const expiryDate = new Date(cert.notAfter);
+        const now = new Date();
+        const daysUntilExpiry = Math.ceil((expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
-          if (daysUntilExpiry < 0) {
-            findings.push({
-              module: 'ssl',
-              severity: 'critical',
-              title_lt: 'SSL/TLS sertifikatas pasibaigęs',
-              description_lt: `Domeno ${domain} SSL/TLS sertifikatas pasibaigė prieš ${Math.abs(daysUntilExpiry)} dienų (${formatLithuanianDate(expiryDate)}). Naudotojai matys saugumo įspėjimą naršyklėje.`,
-              recommendation_lt: 'Nedelsiant atnaujinkite SSL/TLS sertifikatą.',
-              nis2_article: '11 str. 2 d. 5 p.',
-              evidence: { domain, expiry_date: expiryDate.toISOString(), days_until_expiry: daysUntilExpiry },
-            });
-          } else if (daysUntilExpiry <= 30) {
-            findings.push({
-              module: 'ssl',
-              severity: 'high',
-              title_lt: `SSL/TLS sertifikatas baigiasi po ${daysUntilExpiry} dienų`,
-              description_lt: `Domeno ${domain} SSL/TLS sertifikatas baigsis ${formatLithuanianDate(expiryDate)} (po ${daysUntilExpiry} dienų). Jei sertifikatas nebus atnaujintas laiku, naudotojai negalės saugiai pasiekti svetainės.`,
-              recommendation_lt: 'Skubiai atnaujinkite SSL/TLS sertifikatą. Rekomenduojame nustatyti automatinį sertifikatų atnaujinimą.',
-              nis2_article: '11 str. 2 d. 5 p.',
-              evidence: { domain, expiry_date: expiryDate.toISOString(), days_until_expiry: daysUntilExpiry },
-            });
-          }
+        if (daysUntilExpiry < 0) {
+          findings.push({
+            module: 'ssl',
+            severity: 'critical',
+            title_lt: 'SSL/TLS sertifikatas pasibaigęs',
+            description_lt: `Domeno ${domain} SSL/TLS sertifikatas pasibaigė prieš ${Math.abs(daysUntilExpiry)} dienų (${formatLithuanianDate(expiryDate)}). Naudotojai matys saugumo įspėjimą naršyklėje.`,
+            recommendation_lt: 'Nedelsiant atnaujinkite SSL/TLS sertifikatą.',
+            nis2_article: '11 str. 2 d. 5 p.',
+            evidence: { domain, expiry_date: expiryDate.toISOString(), days_until_expiry: daysUntilExpiry },
+          });
+        } else if (daysUntilExpiry <= 30) {
+          findings.push({
+            module: 'ssl',
+            severity: 'high',
+            title_lt: `SSL/TLS sertifikatas baigiasi po ${daysUntilExpiry} dienų`,
+            description_lt: `Domeno ${domain} SSL/TLS sertifikatas baigsis ${formatLithuanianDate(expiryDate)} (po ${daysUntilExpiry} dienų). Jei sertifikatas nebus atnaujintas laiku, naudotojai negalės saugiai pasiekti svetainės.`,
+            recommendation_lt: 'Skubiai atnaujinkite SSL/TLS sertifikatą. Rekomenduojame nustatyti automatinį sertifikatų atnaujinimą.',
+            nis2_article: '11 str. 2 d. 5 p.',
+            evidence: { domain, expiry_date: expiryDate.toISOString(), days_until_expiry: daysUntilExpiry },
+          });
         }
       }
     }

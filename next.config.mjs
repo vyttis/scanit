@@ -5,7 +5,7 @@ const nextConfig = {
   images: {
     formats: ['image/avif', 'image/webp'],
   },
-  serverExternalPackages: ['@sparticuz/chromium', 'puppeteer-core'],
+  serverExternalPackages: ['@sparticuz/chromium-min', 'puppeteer-core'],
 };
 
 export default nextConfig;

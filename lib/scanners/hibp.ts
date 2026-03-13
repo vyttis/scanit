@@ -1,28 +1,32 @@
 import type { ScannerResult, ScannerFinding } from './types';
 import { fetchWithTimeout } from './types';
 
-const HIBP_API_KEY = process.env.HIBP_API_KEY;
-
 /**
  * HaveIBeenPwned scanner — checks breached emails by domain.
  * Severity: Critical if passwords exposed, High if emails in breach.
  * KSĮ: Art. 11(2)(i) — prieigos valdymas ir MFA
  */
 export async function scanHibp(domain: string): Promise<ScannerResult> {
-  if (!HIBP_API_KEY) {
+  const apiKey = process.env.HIBP_API_KEY?.trim();
+  if (!apiKey) {
     return { module: 'hibp', success: false, findings: [], error: 'HIBP_API_KEY not configured' };
   }
 
   try {
+    const url = `https://haveibeenpwned.com/api/v3/breaches?domain=${encodeURIComponent(domain)}`;
+    console.log(`[hibp] GET ${url} (key length: ${apiKey.length})`);
     const res = await fetchWithTimeout(
-      `https://haveibeenpwned.com/api/v3/breaches?domain=${encodeURIComponent(domain)}`,
+      url,
       {
         headers: {
-          'hibp-api-key': HIBP_API_KEY,
+          'hibp-api-key': apiKey,
           'user-agent': 'scanit.lt-platform',
         },
       },
+      15_000,
     );
+
+    console.log(`[hibp] Response: ${res.status}`);
 
     if (res.status === 404) {
       return {

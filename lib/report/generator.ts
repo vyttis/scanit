@@ -306,7 +306,7 @@ export async function generateReport(scanId: string): Promise<GenerateReportResu
     reportId,
   });
 
-  // 7. Try PDF generation via Puppeteer, fall back to HTML if unavailable
+  // 7. Try PDF generation via Puppeteer + chromium-min, fall back to HTML
   let pdfPath: string;
   let uploadBuffer: Buffer;
   let uploadContentType: string;
@@ -319,7 +319,7 @@ export async function generateReport(scanId: string): Promise<GenerateReportResu
     uploadContentType = 'application/pdf';
     console.log(`Report ${reportId}: PDF generated successfully`);
   } catch (pdfErr) {
-    // Puppeteer/Chromium not available (common on Vercel) — fall back to HTML
+    // Puppeteer/Chromium not available — fall back to HTML
     console.warn(`Report ${reportId}: PDF generation failed, falling back to HTML:`, pdfErr);
     pdfPath = `reports/${org.id}/${scanId}/${reportId}.html`;
     uploadBuffer = Buffer.from(html, 'utf-8');

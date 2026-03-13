@@ -1,24 +1,24 @@
 import type { ScannerResult, ScannerFinding } from './types';
 import { fetchWithTimeout } from './types';
 
-const SHODAN_API_KEY = process.env.SHODAN_API_KEY;
-
 /**
  * Shodan scanner — checks open ports, exposed services, CVEs.
  * Severity: Critical if known CVE, High if sensitive service exposed.
  * KSĮ: Art. 11(2)(e) — tinklų saugumas
  */
 export async function scanShodan(domain: string): Promise<ScannerResult> {
-  if (!SHODAN_API_KEY) {
+  const apiKey = process.env.SHODAN_API_KEY?.trim();
+  if (!apiKey) {
     return { module: 'shodan', success: false, findings: [], error: 'SHODAN_API_KEY not configured' };
   }
 
   try {
     // Resolve domain to IP first via Shodan DNS
-    const dnsRes = await fetchWithTimeout(
-      `https://api.shodan.io/dns/resolve?hostnames=${encodeURIComponent(domain)}&key=${SHODAN_API_KEY}`,
-    );
+    const dnsUrl = `https://api.shodan.io/dns/resolve?hostnames=${encodeURIComponent(domain)}&key=${apiKey}`;
+    console.log(`[shodan] DNS resolve: ${domain}`);
+    const dnsRes = await fetchWithTimeout(dnsUrl, {}, 15_000);
 
+    console.log(`[shodan] DNS response: ${dnsRes.status}`);
     if (!dnsRes.ok) {
       return { module: 'shodan', success: false, findings: [], error: `DNS resolve failed: ${dnsRes.status}` };
     }
@@ -43,9 +43,13 @@ export async function scanShodan(domain: string): Promise<ScannerResult> {
     }
 
     // Get host info
+    console.log(`[shodan] Host lookup: ${ip}`);
     const hostRes = await fetchWithTimeout(
-      `https://api.shodan.io/shodan/host/${ip}?key=${SHODAN_API_KEY}`,
+      `https://api.shodan.io/shodan/host/${ip}?key=${apiKey}`,
+      {},
+      15_000,
     );
+    console.log(`[shodan] Host response: ${hostRes.status}`);
 
     if (hostRes.status === 404) {
       return {

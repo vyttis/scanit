@@ -55,7 +55,11 @@ export default async function ReportsPage() {
       ) : (
         <div className="grid gap-4">
           {reports.map((report) => (
-            <div key={report.id} className="bg-white rounded-lg shadow-md p-6">
+            <Link
+              key={report.id}
+              href={`/reports/${report.scan_id}`}
+              className="block bg-white rounded-lg shadow-md p-6 hover:shadow-lg hover:bg-gray-50 transition-all cursor-pointer"
+            >
               <div className="flex items-center justify-between">
                 <div>
                   {isSuperadmin && (report as Record<string, unknown>).organizations ? (
@@ -79,19 +83,13 @@ export default async function ReportsPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Link
-                    href={`/reports/${report.scan_id}`}
-                    className="px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-medium rounded-md hover:bg-gray-200 whitespace-nowrap"
-                  >
-                    Peržiūrėti
-                  </Link>
                   <ReportDownloadButton
                     scanId={report.scan_id}
                     hasReport={!!report.pdf_path}
                   />
                 </div>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
       )}

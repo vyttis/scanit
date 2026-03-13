@@ -2,20 +2,19 @@ import type { ScannerResult, ScannerFinding } from './types';
 import { fetchWithTimeout } from './types';
 import { resolve } from 'dns/promises';
 
-const SECURITYTRAILS_API_KEY = process.env.SECURITYTRAILS_API_KEY;
-
 /**
  * SecurityTrails scanner — checks subdomains, DNS history, dangling records.
  * Severity: High if dangling subdomain, Medium if suspicious DNS history.
  * KSĮ: Art. 11(2)(a) — rizikų valdymas
  */
 export async function scanSecuritytrails(domain: string): Promise<ScannerResult> {
-  if (!SECURITYTRAILS_API_KEY) {
+  const apiKey = process.env.SECURITYTRAILS_API_KEY?.trim();
+  if (!apiKey) {
     return { module: 'securitytrails', success: false, findings: [], error: 'SECURITYTRAILS_API_KEY not configured' };
   }
 
   const headers = {
-    APIKEY: SECURITYTRAILS_API_KEY,
+    APIKEY: apiKey,
     Accept: 'application/json',
   };
 
@@ -23,12 +22,11 @@ export async function scanSecuritytrails(domain: string): Promise<ScannerResult>
     const findings: ScannerFinding[] = [];
 
     // 1. Subdomain enumeration
-    const subdomainsRes = await fetchWithTimeout(
-      `https://api.securitytrails.com/v1/domain/${encodeURIComponent(domain)}/subdomains?children_only=false`,
-      { headers },
-      15_000,
-    );
+    const subUrl = `https://api.securitytrails.com/v1/domain/${encodeURIComponent(domain)}/subdomains?children_only=false`;
+    console.log(`[securitytrails] GET ${subUrl} (key length: ${apiKey.length})`);
+    const subdomainsRes = await fetchWithTimeout(subUrl, { headers }, 15_000);
 
+    console.log(`[securitytrails] Response: ${subdomainsRes.status}`);
     if (!subdomainsRes.ok) {
       const status = subdomainsRes.status;
       if (status === 429) {

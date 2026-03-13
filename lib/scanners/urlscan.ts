@@ -1,28 +1,33 @@
 import type { ScannerResult, ScannerFinding } from './types';
 import { fetchWithTimeout } from './types';
 
-const URLSCAN_API_KEY = process.env.URLSCAN_API_KEY;
-
 /**
  * URLScan.io scanner — checks for lookalike domains, phishing detection.
  * Severity: Critical if active phishing detected.
  * KSĮ: Art. 11(2)(b) — incidentų valdymas
  */
 export async function scanUrlscan(domain: string): Promise<ScannerResult> {
-  if (!URLSCAN_API_KEY) {
+  const apiKey = process.env.URLSCAN_API_KEY?.trim();
+  if (!apiKey) {
     return { module: 'urlscan', success: false, findings: [], error: 'URLSCAN_API_KEY not configured' };
   }
 
   try {
     // Search for existing scans of this domain
+    const searchUrl = `https://urlscan.io/api/v1/search/?q=domain:${encodeURIComponent(domain)}&size=10`;
+    console.log(`[urlscan] GET ${searchUrl}`);
     const searchRes = await fetchWithTimeout(
-      `https://urlscan.io/api/v1/search/?q=domain:${encodeURIComponent(domain)}&size=10`,
+      searchUrl,
       {
-        headers: { 'API-Key': URLSCAN_API_KEY },
+        headers: { 'API-Key': apiKey },
       },
+      15_000,
     );
 
+    console.log(`[urlscan] Response: ${searchRes.status}`);
     if (!searchRes.ok) {
+      const errBody = await searchRes.text().catch(() => '');
+      console.error(`[urlscan] Error: ${errBody.slice(0, 300)}`);
       return { module: 'urlscan', success: false, findings: [], error: `URLScan API returned: ${searchRes.status}` };
     }
 
@@ -62,8 +67,9 @@ export async function scanUrlscan(domain: string): Promise<ScannerResult> {
       const lookalikeRes = await fetchWithTimeout(
         `https://urlscan.io/api/v1/search/?q=domain:*${encodeURIComponent(baseName)}*%20AND%20NOT%20domain:${encodeURIComponent(domain)}&size=10`,
         {
-          headers: { 'API-Key': URLSCAN_API_KEY },
+          headers: { 'API-Key': apiKey },
         },
+        15_000,
       );
 
       if (lookalikeRes.ok) {

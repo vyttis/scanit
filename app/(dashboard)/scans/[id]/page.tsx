@@ -86,6 +86,13 @@ export default async function ScanDetailPage({ params }: { params: { id: string 
     findingCounts[f.severity as keyof typeof findingCounts]++;
   });
 
+  // Calculate risk score from findings if report doesn't have one
+  const SEVERITY_WEIGHTS: Record<string, number> = { critical: 25, high: 15, medium: 5, low: 1, info: 0 };
+  const calculatedRiskScore = Math.min(100, findings.reduce(
+    (sum, f) => sum + (SEVERITY_WEIGHTS[f.severity] ?? 0), 0,
+  ));
+  const displayRiskScore = report?.risk_score ?? (findings.length > 0 ? calculatedRiskScore : null);
+
   // Parse scanner errors
   const scannerErrors: ScannerError[] = Array.isArray(scan.scanner_errors) ? scan.scanner_errors : [];
   const failedModules = new Set(scannerErrors.map((e: ScannerError) => e.module));
@@ -174,7 +181,7 @@ export default async function ScanDetailPage({ params }: { params: { id: string 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-white rounded-lg shadow-md p-6 flex flex-col items-center">
             <h2 className="text-sm font-medium text-gray-500 mb-4">Rizikos balas</h2>
-            <RiskScoreBadge score={report?.risk_score ?? null} size="lg" />
+            <RiskScoreBadge score={displayRiskScore} size="lg" />
           </div>
           <div className="bg-white rounded-lg shadow-md p-6">
             <h2 className="text-sm font-medium text-gray-500 mb-3">Nustatyti trūkumai</h2>

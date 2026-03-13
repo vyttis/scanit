@@ -46,9 +46,29 @@ export default async function ScansPage() {
   }
   const { data: reports } = await reportsQuery;
 
+  // Also fetch finding counts directly from findings table for scans without reports
+  let findingsQuery = client
+    .from('findings')
+    .select('scan_id, severity');
+  if (!isSuperadmin) {
+    findingsQuery = findingsQuery.eq('org_id', profile!.org_id!);
+  }
+  const { data: allFindings } = await findingsQuery;
+
   const reportByScanId = new Map(
     (reports ?? []).map((r) => [r.scan_id, r]),
   );
+
+  // Build finding counts per scan from findings table
+  const findingCountsByScanId = new Map<string, { critical: number; high: number; medium: number; low: number }>();
+  for (const f of (allFindings ?? [])) {
+    const counts = findingCountsByScanId.get(f.scan_id) || { critical: 0, high: 0, medium: 0, low: 0 };
+    if (f.severity === 'critical') counts.critical++;
+    else if (f.severity === 'high') counts.high++;
+    else if (f.severity === 'medium') counts.medium++;
+    else if (f.severity === 'low') counts.low++;
+    findingCountsByScanId.set(f.scan_id, counts);
+  }
 
   const statusLabels: Record<string, string> = {
     queued: 'Laukiama eilėje',
@@ -64,10 +84,12 @@ export default async function ScansPage() {
     failed: 'bg-red-100 text-red-800',
   };
 
-  function riskScoreColor(score: number | null): string {
-    if (score === null) return 'text-gray-400';
+  function riskScoreColor(score: number | null | undefined): string {
+    if (score === null || score === undefined) return 'text-gray-400';
     if (score >= 70) return 'text-red-600';
     if (score >= 41) return 'text-yellow-600';
+    if (score > 0) return 'text-green-600';
+    // score === 0 — still show as red (0 risk means no issues, but if explicitly 0 from report it's fine)
     return 'text-green-600';
   }
 
@@ -93,12 +115,17 @@ export default async function ScansPage() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rizikos balas</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Trūkumai</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Trukmė</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ataskaita</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Veiksmai</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
               {scans.map((scan) => {
                 const report = reportByScanId.get(scan.id);
+                const counts = report
+                  ? { critical: report.critical_count ?? 0, high: report.high_count ?? 0, medium: report.medium_count ?? 0, low: report.low_count ?? 0 }
+                  : findingCountsByScanId.get(scan.id);
+                const hasAnyFindings = counts && (counts.critical > 0 || counts.high > 0 || counts.medium > 0 || counts.low > 0);
+
                 return (
                   <tr key={scan.id} className="hover:bg-gray-50">
                     {isSuperadmin && (
@@ -109,9 +136,7 @@ export default async function ScansPage() {
                       </td>
                     )}
                     <td className="px-6 py-4 text-sm text-gray-900">
-                      <Link href={`/scans/${scan.id}`} className="text-blue-600 hover:text-blue-800 hover:underline">
-                        {formatLithuanianDateTime(scan.created_at)}
-                      </Link>
+                      {formatLithuanianDateTime(scan.created_at)}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600">
                       {scan.scan_type === 'light' ? 'Lengvas' : 'Gilus'}
@@ -122,28 +147,28 @@ export default async function ScansPage() {
                       </span>
                     </td>
                     <td className="px-6 py-4">
-                      {report ? (
+                      {report?.risk_score !== null && report?.risk_score !== undefined ? (
                         <span className={`text-lg font-bold ${riskScoreColor(report.risk_score)}`}>
-                          {report.risk_score ?? '—'}
+                          {report.risk_score}
                         </span>
                       ) : (
                         <span className="text-sm text-gray-400">—</span>
                       )}
                     </td>
                     <td className="px-6 py-4">
-                      {report ? (
+                      {hasAnyFindings ? (
                         <div className="flex gap-1.5 text-xs">
-                          {report.critical_count > 0 && (
-                            <span className="text-red-600 font-medium">{report.critical_count} K</span>
+                          {counts!.critical > 0 && (
+                            <span className="text-red-600 font-medium">{counts!.critical}K</span>
                           )}
-                          {report.high_count > 0 && (
-                            <span className="text-orange-600 font-medium">{report.high_count} A</span>
+                          {counts!.high > 0 && (
+                            <span className="text-orange-600 font-medium">{counts!.high}A</span>
                           )}
-                          {report.medium_count > 0 && (
-                            <span className="text-yellow-600 font-medium">{report.medium_count} V</span>
+                          {counts!.medium > 0 && (
+                            <span className="text-yellow-600 font-medium">{counts!.medium}V</span>
                           )}
-                          {report.low_count > 0 && (
-                            <span className="text-blue-600 font-medium">{report.low_count} Ž</span>
+                          {counts!.low > 0 && (
+                            <span className="text-blue-600 font-medium">{counts!.low}Ž</span>
                           )}
                         </div>
                       ) : (
@@ -156,23 +181,55 @@ export default async function ScansPage() {
                         : '—'}
                     </td>
                     <td className="px-6 py-4">
-                      {scan.status === 'completed' ? (
+                      {scan.status === 'completed' && (
                         <div className="flex items-center gap-2">
-                          {report?.pdf_path && (
-                            <Link
-                              href={`/reports/${scan.id}`}
-                              className="px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-medium rounded-md hover:bg-gray-200 whitespace-nowrap"
-                            >
-                              Peržiūrėti
-                            </Link>
+                          <Link
+                            href={`/scans/${scan.id}`}
+                            className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 whitespace-nowrap"
+                          >
+                            Rezultatai
+                          </Link>
+                          {report?.pdf_path ? (
+                            <>
+                              <Link
+                                href={`/reports/${scan.id}`}
+                                className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-md hover:bg-blue-700 whitespace-nowrap"
+                              >
+                                Peržiūrėti ataskaitą
+                              </Link>
+                              <ReportDownloadButton scanId={scan.id} hasReport={true} />
+                            </>
+                          ) : (
+                            <ReportDownloadButton scanId={scan.id} hasReport={false} />
                           )}
-                          <ReportDownloadButton
-                            scanId={scan.id}
-                            hasReport={!!report?.pdf_path}
-                          />
                         </div>
-                      ) : (
-                        <span className="text-sm text-gray-400">—</span>
+                      )}
+                      {scan.status === 'running' && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 rounded-md">
+                          <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                          </svg>
+                          Vykdoma...
+                        </span>
+                      )}
+                      {scan.status === 'queued' && (
+                        <span className="inline-flex px-3 py-1.5 text-xs font-medium text-gray-500 bg-gray-50 rounded-md">
+                          Laukiama...
+                        </span>
+                      )}
+                      {scan.status === 'failed' && (
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex px-2 py-1 text-xs font-medium text-red-700 bg-red-50 rounded-full">
+                            Nepavyko
+                          </span>
+                          <Link
+                            href={`/scans/${scan.id}`}
+                            className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 whitespace-nowrap"
+                          >
+                            Detalės
+                          </Link>
+                        </div>
                       )}
                     </td>
                   </tr>
