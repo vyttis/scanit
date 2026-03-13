@@ -2,8 +2,9 @@ import type { ScannerResult, ScannerFinding } from './types';
 import { fetchWithTimeout } from './types';
 import { formatLithuanianDate } from '@/lib/utils/date';
 
-const MAX_POLLS = 5;
+const MAX_POLLS = 4;
 const POLL_INTERVAL_MS = 10_000;
+const INITIAL_WAIT_MS = 15_000;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -15,83 +16,132 @@ function sleep(ms: number) {
  * KSĮ: Art. 11(2)(e) — tinklų saugumas
  * Note: SSL Labs API is free and doesn't require an API key.
  *
- * The API is asynchronous — starts analysis, then polls until ready.
+ * The API is asynchronous:
+ * 1. First call with startNew=on to trigger a fresh analysis
+ * 2. Wait 15s for analysis to start
+ * 3. Poll without startNew up to 4 times at 10s intervals
+ * 4. If 529 (overloaded), wait 30s and retry once
  */
 export async function scanSsl(domain: string): Promise<ScannerResult> {
   try {
-    // Start or fetch cached analysis
-    const baseUrl = `https://api.ssllabs.com/api/v3/analyze?host=${encodeURIComponent(domain)}&all=done`;
-    console.log(`[ssl] GET ${baseUrl}`);
+    const host = encodeURIComponent(domain);
+    const startUrl = `https://api.ssllabs.com/api/v3/analyze?host=${host}&all=done&startNew=on`;
+    const pollUrl = `https://api.ssllabs.com/api/v3/analyze?host=${host}&all=done`;
 
-    let data: Record<string, unknown> | null = null;
+    console.log(`[ssl] Starting new analysis: ${startUrl}`);
 
-    for (let attempt = 0; attempt <= MAX_POLLS; attempt++) {
-      const url = attempt === 0 ? `${baseUrl}&fromCache=on&maxAge=72` : baseUrl;
-      const res = await fetchWithTimeout(url, {}, 20_000);
-      console.log(`[ssl] Poll ${attempt}: status ${res.status}`);
+    // Step 1: Trigger new analysis with startNew=on
+    let startRes = await fetchWithTimeout(startUrl, {}, 20_000);
+    console.log(`[ssl] Start response: ${startRes.status}`);
 
-      // 529 = overloaded — wait 30s and retry once
-      if (res.status === 529) {
-        console.log(`[ssl] Overloaded (529), waiting 30s and retrying once...`);
-        await sleep(30_000);
-        const retryRes = await fetchWithTimeout(url, {}, 20_000);
-        console.log(`[ssl] Retry after 529: status ${retryRes.status}`);
-        if (!retryRes.ok) {
-          return {
-            module: 'ssl',
-            success: true,
-            findings: [{
-              module: 'ssl',
-              severity: 'info',
-              title_lt: 'SSL Labs paslauga šiuo metu perkrauta',
-              description_lt: `SSL Labs API šiuo metu yra perkrautas ir negali atlikti analizės domenui ${domain}. Tai yra laikina problema iš SSL Labs pusės.`,
-              recommendation_lt: 'Pakartokite skenavimą vėliau, kad gautumėte SSL/TLS rezultatus.',
-              nis2_article: null,
-              evidence: { domain, status: retryRes.status },
-            }],
-          };
-        }
-        data = await retryRes.json();
-        break;
-      }
-
-      if (res.status === 429) {
+    // Handle 529 on initial request
+    if (startRes.status === 529) {
+      console.log(`[ssl] Overloaded (529) on start, waiting 30s and retrying...`);
+      await sleep(30_000);
+      startRes = await fetchWithTimeout(startUrl, {}, 20_000);
+      console.log(`[ssl] Retry start response: ${startRes.status}`);
+      if (startRes.status === 529) {
         return {
           module: 'ssl',
           success: true,
           findings: [{
             module: 'ssl',
             severity: 'info',
-            title_lt: 'SSL Labs API limitas pasiektas',
-            description_lt: `SSL Labs API užklausų limitas pasiektas skenojant domeną ${domain}. Tai yra laikina problema.`,
-            recommendation_lt: 'Pakartokite skenavimą vėliau.',
+            title_lt: 'SSL Labs paslauga šiuo metu perkrauta',
+            description_lt: `SSL Labs API šiuo metu yra perkrautas ir negali atlikti analizės domenui ${domain}. Tai yra laikina problema iš SSL Labs pusės.`,
+            recommendation_lt: 'Pakartokite skenavimą vėliau, kad gautumėte SSL/TLS rezultatus.',
             nis2_article: null,
-            evidence: { domain, status: 429 },
+            evidence: { domain, status: 529 },
           }],
         };
       }
-
-      if (!res.ok) {
-        return { module: 'ssl', success: false, findings: [], error: `SSL Labs API returned: ${res.status}` };
-      }
-
-      data = await res.json();
-
-      // Check if analysis is complete
-      const status = data?.status as string | undefined;
-      if (status === 'READY' || status === 'ERROR') {
-        break;
-      }
-
-      // Still in progress — poll again
-      if (attempt < MAX_POLLS) {
-        console.log(`[ssl] Analysis in progress (${status}), polling in ${POLL_INTERVAL_MS / 1000}s...`);
-        await sleep(POLL_INTERVAL_MS);
-      }
     }
 
-    if (!data) {
-      return { module: 'ssl', success: false, findings: [], error: 'SSL Labs: no data received' };
+    if (startRes.status === 429) {
+      return {
+        module: 'ssl',
+        success: true,
+        findings: [{
+          module: 'ssl',
+          severity: 'info',
+          title_lt: 'SSL Labs API limitas pasiektas',
+          description_lt: `SSL Labs API užklausų limitas pasiektas skenojant domeną ${domain}. Tai yra laikina problema.`,
+          recommendation_lt: 'Pakartokite skenavimą vėliau.',
+          nis2_article: null,
+          evidence: { domain, status: 429 },
+        }],
+      };
+    }
+
+    if (!startRes.ok) {
+      return { module: 'ssl', success: false, findings: [], error: `SSL Labs API returned: ${startRes.status}` };
+    }
+
+    let data: Record<string, unknown> = await startRes.json();
+
+    // Check if already ready (cached result)
+    if (data.status === 'READY' || data.status === 'ERROR') {
+      console.log(`[ssl] Immediate result: ${data.status}`);
+    } else {
+      // Step 2: Wait 15s before first poll
+      console.log(`[ssl] Analysis started (${data.status}), waiting ${INITIAL_WAIT_MS / 1000}s before polling...`);
+      await sleep(INITIAL_WAIT_MS);
+
+      // Step 3: Poll without startNew
+      for (let poll = 0; poll < MAX_POLLS; poll++) {
+        const res = await fetchWithTimeout(pollUrl, {}, 20_000);
+        console.log(`[ssl] Poll ${poll + 1}/${MAX_POLLS}: status ${res.status}`);
+
+        if (res.status === 529) {
+          console.log(`[ssl] Overloaded (529) on poll, waiting 30s and retrying...`);
+          await sleep(30_000);
+          const retryRes = await fetchWithTimeout(pollUrl, {}, 20_000);
+          console.log(`[ssl] Retry poll: status ${retryRes.status}`);
+          if (!retryRes.ok) {
+            return {
+              module: 'ssl',
+              success: true,
+              findings: [{
+                module: 'ssl',
+                severity: 'info',
+                title_lt: 'SSL Labs paslauga šiuo metu perkrauta',
+                description_lt: `SSL Labs API šiuo metu yra perkrautas ir negali atlikti analizės domenui ${domain}. Tai yra laikina problema iš SSL Labs pusės.`,
+                recommendation_lt: 'Pakartokite skenavimą vėliau, kad gautumėte SSL/TLS rezultatus.',
+                nis2_article: null,
+                evidence: { domain, status: retryRes.status },
+              }],
+            };
+          }
+          data = await retryRes.json();
+        } else if (res.status === 429) {
+          return {
+            module: 'ssl',
+            success: true,
+            findings: [{
+              module: 'ssl',
+              severity: 'info',
+              title_lt: 'SSL Labs API limitas pasiektas',
+              description_lt: `SSL Labs API užklausų limitas pasiektas skenojant domeną ${domain}. Tai yra laikina problema.`,
+              recommendation_lt: 'Pakartokite skenavimą vėliau.',
+              nis2_article: null,
+              evidence: { domain, status: 429 },
+            }],
+          };
+        } else if (!res.ok) {
+          return { module: 'ssl', success: false, findings: [], error: `SSL Labs API returned: ${res.status}` };
+        } else {
+          data = await res.json();
+        }
+
+        if (data.status === 'READY' || data.status === 'ERROR') {
+          break;
+        }
+
+        if (poll < MAX_POLLS - 1) {
+          console.log(`[ssl] Analysis in progress (${data.status}), polling in ${POLL_INTERVAL_MS / 1000}s...`);
+          await sleep(POLL_INTERVAL_MS);
+        }
+      }
     }
 
     const findings: ScannerFinding[] = [];

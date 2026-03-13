@@ -19,7 +19,7 @@ export async function scanVirustotal(domain: string): Promise<ScannerResult> {
     const res = await fetchWithTimeout(
       url,
       {
-        headers: { 'x-apikey': apiKey },
+        headers: { 'x-apikey': apiKey, 'Accept': 'application/json' },
       },
       15_000,
     );

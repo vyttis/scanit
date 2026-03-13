@@ -197,16 +197,15 @@ async function executeScan(
     }
     console.log(`Scan ${scanId}: ${succeededScanners.length}/8 scanners succeeded, ${failedScanners.length}/8 failed`);
 
-    // Store scanner errors + env var diagnostics in scan record for UI visibility
+    // Log env var diagnostics to server console only (never expose to frontend)
     const envCheck = checkScannerEnvVars();
-    const diagnostics = [
-      ...scannerErrors,
-      { module: 'env_check', error: JSON.stringify(envCheck) },
-    ];
+    console.log(`Scan ${scanId} env var check:`, envCheck);
+
+    // Store only scanner errors (no env diagnostics) in scan record for UI
     await serviceClient
       .from('scans')
       .update({
-        scanner_errors: diagnostics,
+        scanner_errors: scannerErrors.length > 0 ? scannerErrors : [],
       })
       .eq('id', scanId);
 

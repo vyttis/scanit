@@ -392,19 +392,27 @@ export async function generateReport(scanId: string): Promise<GenerateReportResu
 
 /**
  * Enrich findings with Claude-generated Lithuanian descriptions.
- * Only calls Claude for findings that appear to have placeholder text.
+ * Always enriches non-info findings to add structured sections
+ * (KAS TAI, KODĖL TAI PAVOJINGA, VERSLO POVEIKIS).
+ * Info findings keep their scanner-generated text as-is.
  */
 async function enrichFindings(findings: Finding[]): Promise<Finding[]> {
   const enriched: Finding[] = [];
+  const hasApiKey = !!process.env.ANTHROPIC_API_KEY;
+
+  if (!hasApiKey) {
+    console.warn('ANTHROPIC_API_KEY not set — skipping Claude enrichment');
+    return findings;
+  }
 
   for (const finding of findings) {
-    const needsEnrichment =
-      !finding.description_lt ||
-      finding.description_lt.length < 20 ||
-      finding.description_lt === finding.title_lt;
+    // Always enrich non-info findings for structured sections
+    // Skip info findings — their scanner-generated text is sufficient
+    const shouldEnrich = finding.severity !== 'info';
 
-    if (needsEnrichment) {
+    if (shouldEnrich) {
       try {
+        console.log(`Enriching finding: ${finding.module} / ${finding.severity} / ${finding.title_lt.slice(0, 60)}`);
         const generated = await generateFindingDescription({
           module: finding.module,
           severity: finding.severity,
