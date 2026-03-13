@@ -30,8 +30,25 @@ export function ReportDownloadButton({ scanId, hasReport }: ReportDownloadButton
         }
       }
 
-      // Open PDF through our proxy endpoint (serves on platform.scanit.lt domain)
-      window.open(`/api/reports/download?scan_id=${scanId}`, '_blank');
+      // Download via fetch + blob to avoid popup blockers
+      const res = await fetch(`/api/reports/download?scan_id=${scanId}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || 'Klaida atsisiunčiant ataskaitą.');
+        return;
+      }
+
+      const blob = await res.blob();
+      const contentType = res.headers.get('Content-Type') || '';
+      const ext = contentType.includes('pdf') ? 'pdf' : 'html';
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ataskaita-${scanId.slice(0, 8)}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     } catch {
       setError('Klaida. Bandykite dar kartą.');
     } finally {
