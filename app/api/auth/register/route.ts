@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { firstName, lastName, email, orgName, orgWebsite, password } = body;
+    const { firstName, lastName, email, orgName, orgWebsite, password, plan } = body;
 
     // Validate required fields
     if (!firstName || !lastName || !email || !orgName || !orgWebsite || !password) {
@@ -121,12 +121,16 @@ export async function POST(request: NextRequest) {
       orgId = existingOrg.id;
     } else {
       // Create organization
+      const validPlans = ['pagrindinis', 'profesionalus'];
+      const orgPlan = validPlans.includes(plan) ? plan : 'pagrindinis';
+
       const { data: newOrg, error: orgError } = await supabase
         .from('organizations')
         .insert({
           name: orgName,
           domain: orgWebsite.toLowerCase(),
           contact_email: email,
+          plan: orgPlan,
         })
         .select('id')
         .single();
@@ -144,14 +148,19 @@ export async function POST(request: NextRequest) {
       orgId = newOrg.id;
     }
 
-    // Update profile with name, org, and pending status
+    // Auto-detect superadmin
+    const superadminEmail = process.env.SUPERADMIN_EMAIL;
+    const isSuperadmin = superadminEmail && email.toLowerCase() === superadminEmail.toLowerCase();
+
+    // Update profile with name, org, and status
     const { error: profileError } = await supabase
       .from('profiles')
       .update({
         first_name: firstName,
         last_name: lastName,
         org_id: orgId,
-        status: 'pending',
+        role: isSuperadmin ? 'superadmin' : 'admin',
+        status: isSuperadmin ? 'approved' : 'pending',
       })
       .eq('id', userId);
 
