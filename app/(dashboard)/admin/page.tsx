@@ -110,7 +110,10 @@ export default async function AdminDashboardPage() {
     redirect('/login');
   }
 
-  const { data: profile } = await supabase
+  // Use service role client — superadmin has org_id=NULL which breaks RLS
+  const serviceClient = createServiceRoleClient();
+
+  const { data: profile } = await serviceClient
     .from('profiles')
     .select('role')
     .eq('id', user.id)
@@ -119,9 +122,6 @@ export default async function AdminDashboardPage() {
   if (profile?.role !== 'superadmin') {
     redirect('/dashboard');
   }
-
-  // Use service role client for cross-org queries
-  const serviceClient = createServiceRoleClient();
 
   // KPI queries in parallel
   const now = new Date();

@@ -1,4 +1,4 @@
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { ScanTriggerButton } from '@/components/scan-trigger-button';
@@ -14,7 +14,9 @@ export default async function DashboardPage() {
 
   if (!user) return null;
 
-  const { data: profile } = await supabase
+  // Use service role to read profile — superadmin has org_id=NULL which breaks RLS
+  const serviceClient = createServiceRoleClient();
+  const { data: profile } = await serviceClient
     .from('profiles')
     .select('org_id, role')
     .eq('id', user.id)
