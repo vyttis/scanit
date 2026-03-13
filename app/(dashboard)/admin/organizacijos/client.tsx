@@ -55,8 +55,9 @@ function RiskScoreBadge({ score }: { score: number | null }) {
   );
 }
 
-export function AdminOrganizationsClient({ organizations }: { organizations: Organization[] }) {
+export function AdminOrganizationsClient({ organizations: initialOrganizations }: { organizations: Organization[] }) {
   const router = useRouter();
+  const [orgs, setOrgs] = useState(initialOrganizations);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
@@ -79,14 +80,14 @@ export function AdminOrganizationsClient({ organizations }: { organizations: Org
   const [confirmAction, setConfirmAction] = useState<{ orgId: string; action: string; label: string } | null>(null);
 
   const filteredOrgs = useMemo(() => {
-    if (!searchQuery.trim()) return organizations;
+    if (!searchQuery.trim()) return orgs;
     const q = searchQuery.toLowerCase().trim();
-    return organizations.filter(
+    return orgs.filter(
       org =>
         org.name.toLowerCase().includes(q) ||
         org.domain.toLowerCase().includes(q)
     );
-  }, [organizations, searchQuery]);
+  }, [orgs, searchQuery]);
 
   function toggleExpanded(id: string) {
     setExpandedId(prev => (prev === id ? null : id));
@@ -134,6 +135,7 @@ export function AdminOrganizationsClient({ organizations }: { organizations: Org
         const res = await fetch(`/api/admin/organizations?id=${orgId}`, { method: 'DELETE' });
         const data = await res.json().catch(() => ({}));
         if (res.ok) {
+          setOrgs(prev => prev.filter(o => o.id !== orgId));
           showSuccess('Organizacija ištrinta.');
           setConfirmAction(null);
           router.refresh();
@@ -152,6 +154,12 @@ export function AdminOrganizationsClient({ organizations }: { organizations: Org
             verify: 'Domenas patvirtintas.',
             unverify: 'Domeno patvirtinimas atšauktas.',
           };
+          // Optimistic update: immediately reflect verified state in UI
+          if (data.organization) {
+            setOrgs(prev => prev.map(o =>
+              o.id === orgId ? { ...o, verified: data.organization.verified } : o
+            ));
+          }
           showSuccess(labels[action] || 'Atnaujinta.');
           setConfirmAction(null);
           router.refresh();
@@ -342,7 +350,7 @@ export function AdminOrganizationsClient({ organizations }: { organizations: Org
 
       {/* Summary */}
       <div className="mb-4 text-sm text-gray-500">
-        Iš viso: {organizations.length} organizacij{organizations.length === 1 ? 'a' : organizations.length > 9 ? 'ų' : 'os'}
+        Iš viso: {orgs.length} organizacij{orgs.length === 1 ? 'a' : orgs.length > 9 ? 'ų' : 'os'}
         {searchQuery.trim() && ` | Rasta: ${filteredOrgs.length}`}
       </div>
 

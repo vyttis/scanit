@@ -51,9 +51,13 @@ export async function POST(request: Request) {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('org_id, role')
+    .select('org_id, role, status')
     .eq('id', user.id)
     .single();
+
+  if (profile?.status === 'suspended') {
+    return NextResponse.json({ error: 'Jūsų paskyra sustabdyta.' }, { status: 403 });
+  }
 
   if (!profile?.org_id) {
     return NextResponse.json({ error: 'Organizacija nerasta.' }, { status: 404 });
@@ -78,6 +82,13 @@ export async function POST(request: Request) {
 
   if (!Array.isArray(values)) {
     return NextResponse.json({ error: 'Reikšmės turi būti masyvas.' }, { status: 400 });
+  }
+
+  // Ensure all values are strings — prevent JSONB injection
+  for (const v of values) {
+    if (typeof v !== 'string') {
+      return NextResponse.json({ error: 'Visos reikšmės turi būti tekstinės.' }, { status: 400 });
+    }
   }
 
   const validationError = validateValues(field as EnrichmentField, values);

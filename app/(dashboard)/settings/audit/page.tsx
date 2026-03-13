@@ -1,4 +1,4 @@
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 
@@ -21,14 +21,17 @@ export default async function AuditLogPage() {
     redirect('/login');
   }
 
-  // Only admins can view audit log
-  const { data: profile } = await supabase
+  // Only admins and superadmins can view audit log
+  const serviceClient = createServiceRoleClient();
+  const { data: profile } = await serviceClient
     .from('profiles')
     .select('org_id, role')
     .eq('id', user.id)
     .single();
 
-  if (!profile?.org_id || profile.role !== 'admin') {
+  const isSuperadmin = profile?.role === 'superadmin';
+
+  if (!isSuperadmin && (!profile?.org_id || profile.role !== 'admin')) {
     return (
       <div className="max-w-2xl mx-auto mt-8">
         <div className="bg-white rounded-lg shadow-md p-8 text-center">
@@ -47,13 +50,17 @@ export default async function AuditLogPage() {
     );
   }
 
-  // Fetch last 50 audit log entries for this org
-  const { data: logs } = await supabase
+  // Fetch last 50 audit log entries — superadmin sees all, regular admin sees own org
+  const auditClient = isSuperadmin ? serviceClient : supabase;
+  let auditQuery = auditClient
     .from('audit_log')
     .select('*')
-    .eq('org_id', profile.org_id)
     .order('created_at', { ascending: false })
     .limit(50);
+  if (!isSuperadmin) {
+    auditQuery = auditQuery.eq('org_id', profile!.org_id!);
+  }
+  const { data: logs } = await auditQuery;
 
   return (
     <div className="space-y-6">

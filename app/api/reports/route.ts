@@ -26,14 +26,21 @@ export async function POST(request: Request) {
     );
   }
 
-  // Get user's profile and org
-  const { data: profile } = await supabase
+  // Get user's profile — use service role for superadmin (org_id=NULL breaks RLS)
+  const profileClient = createServiceRoleClient();
+  const { data: profile } = await profileClient
     .from('profiles')
-    .select('org_id, role')
+    .select('org_id, role, status')
     .eq('id', user.id)
     .single();
 
-  if (!profile?.org_id) {
+  if (profile?.status === 'suspended') {
+    return NextResponse.json({ error: 'Jūsų paskyra sustabdyta.' }, { status: 403 });
+  }
+
+  const isSuperadmin = profile?.role === 'superadmin';
+
+  if (!isSuperadmin && !profile?.org_id) {
     return NextResponse.json({ error: 'Organizacija nerasta.' }, { status: 404 });
   }
 
@@ -49,8 +56,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Netinkamas scan_id formatas.' }, { status: 400 });
   }
 
-  // Verify scan belongs to user's organization (RLS enforced via user client)
-  const { data: scan } = await supabase
+  // Verify scan belongs to user's organization (superadmin can access all)
+  const scanClient = isSuperadmin ? createServiceRoleClient() : supabase;
+  const { data: scan } = await scanClient
     .from('scans')
     .select('id, org_id, status')
     .eq('id', scanId)
@@ -159,8 +167,22 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Netinkamas scan_id formatas.' }, { status: 400 });
   }
 
-  // RLS ensures user can only access their own org's data
-  const { data: report } = await supabase
+  // Check user role — superadmin needs service role to bypass RLS
+  const getProfileClient = createServiceRoleClient();
+  const { data: getProfile } = await getProfileClient
+    .from('profiles')
+    .select('org_id, role, status')
+    .eq('id', user.id)
+    .single();
+
+  if (getProfile?.status === 'suspended') {
+    return NextResponse.json({ error: 'Jūsų paskyra sustabdyta.' }, { status: 403 });
+  }
+
+  const isGetSuperadmin = getProfile?.role === 'superadmin';
+  const reportClient = isGetSuperadmin ? getProfileClient : supabase;
+
+  const { data: report } = await reportClient
     .from('reports')
     .select('id, scan_id, org_id, pdf_path, risk_score, critical_count, high_count, medium_count, low_count, created_at')
     .eq('scan_id', scanId)

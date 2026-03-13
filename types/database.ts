@@ -13,7 +13,7 @@ export type OrganizationSector =
   | 'pasto_paslaugos'
   | 'atlieku_tvarkymas';
 
-export type UserRole = 'admin' | 'viewer';
+export type UserRole = 'admin' | 'viewer' | 'superadmin';
 export type ScanType = 'light' | 'deep';
 export type ScanStatus = 'queued' | 'running' | 'completed' | 'failed';
 export type ScanModule = 'shodan' | 'hibp' | 'ssl' | 'mxtoolbox' | 'securitytrails' | 'virustotal' | 'abuseipdb' | 'urlscan';

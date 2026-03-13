@@ -56,25 +56,36 @@ export default async function DashboardPage() {
     .eq('id', profile.org_id)
     .single();
 
-  if (!org) return null;
+  if (!org) {
+    return (
+      <div className="text-center py-12">
+        <div className="bg-white rounded-lg shadow-md p-8 max-w-md mx-auto">
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Organizacija nerasta</h2>
+          <p className="text-gray-600">
+            Jūsų organizacijos duomenys nebuvo rasti. Kreipkitės į administratorių.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   // Load latest scan
-  const { data: latestScan } = await supabase
+  const { data: scansArr } = await supabase
     .from('scans')
     .select('*')
     .eq('org_id', org.id)
     .order('created_at', { ascending: false })
-    .limit(1)
-    .single();
+    .limit(1);
+  const latestScan = scansArr?.[0] ?? null;
 
   // Load latest report
-  const { data: latestReport } = await supabase
+  const { data: reportsArr } = await supabase
     .from('reports')
     .select('*')
     .eq('org_id', org.id)
     .order('created_at', { ascending: false })
-    .limit(1)
-    .single();
+    .limit(1);
+  const latestReport = reportsArr?.[0] ?? null;
 
   // Load last 5 reports for trend chart
   const { data: trendReports } = await supabase

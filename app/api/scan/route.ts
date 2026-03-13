@@ -29,9 +29,13 @@ export async function POST(request: Request) {
   const profileClient = createServiceRoleClient();
   const { data: profile } = await profileClient
     .from('profiles')
-    .select('org_id, role')
+    .select('org_id, role, status')
     .eq('id', user.id)
     .single();
+
+  if (profile?.status === 'suspended') {
+    return NextResponse.json({ error: 'Jūsų paskyra sustabdyta.' }, { status: 403 });
+  }
 
   const isSuperadmin = profile?.role === 'superadmin';
 
@@ -112,7 +116,13 @@ export async function POST(request: Request) {
     org_id: org.id,
     user_id: user.id,
     action: 'scan_triggered',
-    details: { scan_id: scan.id, domain: org.domain, scan_type: 'light' },
+    details: {
+      scan_id: scan.id,
+      domain: org.domain,
+      scan_type: 'light',
+      is_superadmin_scan: isSuperadmin,
+      target_org_id: targetOrgId,
+    },
     ip_address: ip,
   });
 

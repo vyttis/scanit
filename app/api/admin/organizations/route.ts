@@ -166,12 +166,14 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: 'Nežinomas veiksmas.' }, { status: 400 });
   }
 
-  const { error: updateError } = await serviceClient
+  const { data: updatedOrg, error: updateError } = await serviceClient
     .from('organizations')
     .update(updateData)
-    .eq('id', id);
+    .eq('id', id)
+    .select()
+    .single();
 
-  if (updateError) {
+  if (updateError || !updatedOrg) {
     return NextResponse.json({ error: 'Klaida atnaujinant organizaciją.' }, { status: 500 });
   }
 
@@ -183,7 +185,7 @@ export async function PATCH(request: Request) {
     ip_address: ip,
   });
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ success: true, organization: updatedOrg });
 }
 
 // DELETE — Delete organization
