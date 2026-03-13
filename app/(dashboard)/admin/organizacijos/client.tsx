@@ -20,6 +20,8 @@ const SECTOR_LABELS: Record<string, string> = {
   atlieku_tvarkymas: 'Atliekų tvarkymas',
 };
 
+const SECTOR_OPTIONS = Object.entries(SECTOR_LABELS).map(([value, label]) => ({ value, label }));
+
 interface Organization {
   id: string;
   name: string;
@@ -57,11 +59,24 @@ export function AdminOrganizationsClient({ organizations }: { organizations: Org
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [suspendingId, setSuspendingId] = useState<string | null>(null);
-  const [confirmSuspendId, setConfirmSuspendId] = useState<string | null>(null);
-  const [scanningId, setScanningId] = useState<string | null>(null);
+  const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [scanMessage, setScanMessage] = useState<{ orgId: string; text: string; type: 'success' | 'error' } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Add organization form state
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addForm, setAddForm] = useState({
+    name: '',
+    domain: '',
+    contact_email: '',
+    sector: '',
+    verified: false,
+  });
+  const [addLoading, setAddLoading] = useState(false);
+
+  // Confirm dialogs
+  const [confirmAction, setConfirmAction] = useState<{ orgId: string; action: string; label: string } | null>(null);
 
   const filteredOrgs = useMemo(() => {
     if (!searchQuery.trim()) return organizations;
@@ -77,33 +92,82 @@ export function AdminOrganizationsClient({ organizations }: { organizations: Org
     setExpandedId(prev => (prev === id ? null : id));
   }
 
-  async function handleSuspend(orgId: string) {
-    setSuspendingId(orgId);
+  function showSuccess(msg: string) {
+    setSuccessMsg(msg);
+    setTimeout(() => setSuccessMsg(null), 4000);
+  }
+
+  async function handleAddOrganization(e: React.FormEvent) {
+    e.preventDefault();
+    setAddLoading(true);
     setError(null);
 
     try {
-      const res = await fetch('/api/admin/organizations/suspend', {
+      const res = await fetch('/api/admin/organizations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ organizationId: orgId }),
+        body: JSON.stringify(addForm),
       });
 
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        setConfirmSuspendId(null);
+        setShowAddForm(false);
+        setAddForm({ name: '', domain: '', contact_email: '', sector: '', verified: false });
+        showSuccess(`Organizacija „${data.organization?.name}" sukurta.`);
         router.refresh();
       } else {
-        const data = await res.json().catch(() => ({}));
-        setError(data.error || 'Klaida sustabdant organizaciją. Bandykite dar kartą.');
+        setError(data.error || 'Klaida kuriant organizaciją.');
       }
     } catch {
-      setError('Tinklo klaida. Bandykite dar kartą.');
+      setError('Tinklo klaida.');
     }
 
-    setSuspendingId(null);
+    setAddLoading(false);
+  }
+
+  async function handleOrgAction(orgId: string, action: string) {
+    setLoadingAction(`${orgId}:${action}`);
+    setError(null);
+
+    try {
+      if (action === 'delete') {
+        const res = await fetch(`/api/admin/organizations?id=${orgId}`, { method: 'DELETE' });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) {
+          showSuccess('Organizacija ištrinta.');
+          setConfirmAction(null);
+          router.refresh();
+        } else {
+          setError(data.error || 'Klaida trinant organizaciją.');
+        }
+      } else {
+        const res = await fetch('/api/admin/organizations', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: orgId, action }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) {
+          const labels: Record<string, string> = {
+            verify: 'Domenas patvirtintas.',
+            unverify: 'Domeno patvirtinimas atšauktas.',
+          };
+          showSuccess(labels[action] || 'Atnaujinta.');
+          setConfirmAction(null);
+          router.refresh();
+        } else {
+          setError(data.error || 'Klaida.');
+        }
+      }
+    } catch {
+      setError('Tinklo klaida.');
+    }
+
+    setLoadingAction(null);
   }
 
   async function handleScan(orgId: string) {
-    setScanningId(orgId);
+    setLoadingAction(`${orgId}:scan`);
     setScanMessage(null);
 
     try {
@@ -124,17 +188,117 @@ export function AdminOrganizationsClient({ organizations }: { organizations: Org
       setScanMessage({ orgId, text: 'Tinklo klaida.', type: 'error' });
     }
 
-    setScanningId(null);
+    setLoadingAction(null);
   }
 
   return (
     <div>
       <AdminNav />
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Organizacijų valdymas</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">Organizacijų valdymas</h1>
+        <button
+          onClick={() => setShowAddForm(!showAddForm)}
+          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 transition-colors"
+        >
+          + Pridėti organizaciją
+        </button>
+      </div>
 
+      {/* Messages */}
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm mb-6" role="alert">
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm mb-4" role="alert">
           {error}
+          <button onClick={() => setError(null)} className="ml-2 text-red-500 hover:text-red-700">&times;</button>
+        </div>
+      )}
+      {successMsg && (
+        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded text-sm mb-4">
+          {successMsg}
+        </div>
+      )}
+
+      {/* Add Organization Form */}
+      {showAddForm && (
+        <div className="bg-white shadow rounded-lg p-6 mb-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Nauja organizacija</h2>
+          <form onSubmit={handleAddOrganization} className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Pavadinimas *</label>
+                <input
+                  type="text"
+                  required
+                  value={addForm.name}
+                  onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))}
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-900 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="VšĮ Organizacijos pavadinimas"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Domenas *</label>
+                <input
+                  type="text"
+                  required
+                  value={addForm.domain}
+                  onChange={e => setAddForm(f => ({ ...f, domain: e.target.value }))}
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-900 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="organizacija.lt"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Kontaktinis el. paštas *</label>
+                <input
+                  type="email"
+                  required
+                  value={addForm.contact_email}
+                  onChange={e => setAddForm(f => ({ ...f, contact_email: e.target.value }))}
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-900 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="info@organizacija.lt"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Sektorius</label>
+                <select
+                  value={addForm.sector}
+                  onChange={e => setAddForm(f => ({ ...f, sector: e.target.value }))}
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-900 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">— Pasirinkite —</option>
+                  {SECTOR_OPTIONS.map(s => (
+                    <option key={s.value} value={s.value}>{s.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="verified"
+                checked={addForm.verified}
+                onChange={e => setAddForm(f => ({ ...f, verified: e.target.checked }))}
+                className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+              />
+              <label htmlFor="verified" className="text-sm text-gray-700">
+                Iš karto patvirtinti domeną (aplenkti DNS tikrinimą)
+              </label>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="submit"
+                disabled={addLoading}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              >
+                {addLoading ? 'Kuriama...' : 'Sukurti organizaciją'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowAddForm(false)}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 transition-colors"
+              >
+                Atšaukti
+              </button>
+            </div>
+          </form>
         </div>
       )}
 
@@ -162,6 +326,34 @@ export function AdminOrganizationsClient({ organizations }: { organizations: Org
         {searchQuery.trim() && ` | Rasta: ${filteredOrgs.length}`}
       </div>
 
+      {/* Confirm dialog */}
+      {confirmAction && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Patvirtinkite veiksmą</h3>
+            <p className="text-sm text-gray-600 mb-4">{confirmAction.label}</p>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => handleOrgAction(confirmAction.orgId, confirmAction.action)}
+                disabled={loadingAction !== null}
+                className={`inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white transition-colors disabled:opacity-50 ${
+                  confirmAction.action === 'delete' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'
+                }`}
+              >
+                {loadingAction ? 'Vykdoma...' : 'Taip, tęsti'}
+              </button>
+              <button
+                onClick={() => setConfirmAction(null)}
+                disabled={loadingAction !== null}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 transition-colors disabled:opacity-50"
+              >
+                Atšaukti
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <div className="bg-white shadow overflow-hidden rounded-lg overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
@@ -183,7 +375,7 @@ export function AdminOrganizationsClient({ organizations }: { organizations: Org
                 Skenavimų sk.
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Paskutinis rizikos balas
+                Rizikos balas
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Veiksmai
@@ -206,13 +398,17 @@ export function AdminOrganizationsClient({ organizations }: { organizations: Org
                 org={org}
                 isExpanded={expandedId === org.id}
                 onToggleExpand={() => toggleExpanded(org.id)}
-                confirmSuspendId={confirmSuspendId}
-                onConfirmSuspend={() => setConfirmSuspendId(org.id)}
-                onCancelSuspend={() => setConfirmSuspendId(null)}
-                onSuspend={() => handleSuspend(org.id)}
-                isSuspending={suspendingId === org.id}
+                onVerify={() => handleOrgAction(org.id, 'verify')}
+                onUnverify={() => handleOrgAction(org.id, 'unverify')}
+                onDelete={() =>
+                  setConfirmAction({
+                    orgId: org.id,
+                    action: 'delete',
+                    label: `Ar tikrai norite ištrinti organizaciją „${org.name}"? Bus pašalinti visi skenavimai, ataskaitos ir duomenys. Šio veiksmo negalima atšaukti.`,
+                  })
+                }
                 onScan={() => handleScan(org.id)}
-                isScanning={scanningId === org.id}
+                isLoading={loadingAction?.startsWith(org.id) ?? false}
                 scanMessage={scanMessage?.orgId === org.id ? scanMessage : null}
               />
             ))}
@@ -227,13 +423,11 @@ interface OrgRowProps {
   org: Organization;
   isExpanded: boolean;
   onToggleExpand: () => void;
-  confirmSuspendId: string | null;
-  onConfirmSuspend: () => void;
-  onCancelSuspend: () => void;
-  onSuspend: () => void;
-  isSuspending: boolean;
+  onVerify: () => void;
+  onUnverify: () => void;
+  onDelete: () => void;
   onScan: () => void;
-  isScanning: boolean;
+  isLoading: boolean;
   scanMessage: { text: string; type: 'success' | 'error' } | null;
 }
 
@@ -241,17 +435,13 @@ function OrgRow({
   org,
   isExpanded,
   onToggleExpand,
-  confirmSuspendId,
-  onConfirmSuspend,
-  onCancelSuspend,
-  onSuspend,
-  isSuspending,
+  onVerify,
+  onUnverify,
+  onDelete,
   onScan,
-  isScanning,
+  isLoading,
   scanMessage,
 }: OrgRowProps) {
-  const isConfirming = confirmSuspendId === org.id;
-
   return (
     <>
       <tr
@@ -296,45 +486,48 @@ function OrgRow({
         </td>
         <td className="px-6 py-4 whitespace-nowrap text-sm" onClick={e => e.stopPropagation()}>
           <div className="flex items-center gap-2 flex-wrap">
-            {org.verified && (
+            {/* Verify / Unverify */}
+            {!org.verified ? (
               <button
-                onClick={onScan}
-                disabled={isScanning}
-                className="inline-flex items-center px-3 py-1.5 border border-blue-300 text-xs font-medium rounded-md text-blue-700 bg-white hover:bg-blue-50 transition-colors disabled:opacity-50"
+                onClick={onVerify}
+                disabled={isLoading}
+                className="inline-flex items-center px-3 py-1.5 border border-green-300 text-xs font-medium rounded-md text-green-700 bg-white hover:bg-green-50 transition-colors disabled:opacity-50"
               >
-                {isScanning ? 'Paleidžiama...' : 'Skenuoti'}
+                Patvirtinti
+              </button>
+            ) : (
+              <button
+                onClick={onUnverify}
+                disabled={isLoading}
+                className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded-md text-gray-600 bg-white hover:bg-gray-50 transition-colors disabled:opacity-50"
+              >
+                Atšaukti patv.
               </button>
             )}
+
+            {/* Scan */}
+            <button
+              onClick={onScan}
+              disabled={isLoading}
+              className="inline-flex items-center px-3 py-1.5 border border-blue-300 text-xs font-medium rounded-md text-blue-700 bg-white hover:bg-blue-50 transition-colors disabled:opacity-50"
+            >
+              Skenuoti
+            </button>
+
+            {/* Delete */}
+            <button
+              onClick={onDelete}
+              disabled={isLoading}
+              className="inline-flex items-center px-3 py-1.5 border border-red-300 text-xs font-medium rounded-md text-red-700 bg-white hover:bg-red-50 transition-colors disabled:opacity-50"
+            >
+              Ištrinti
+            </button>
+
+            {/* Scan message */}
             {scanMessage && (
               <span className={`text-xs ${scanMessage.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
                 {scanMessage.text}
               </span>
-            )}
-            {isConfirming ? (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-red-600 font-medium">Tikrai sustabdyti?</span>
-                <button
-                  onClick={onSuspend}
-                  disabled={isSuspending}
-                  className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
-                >
-                  {isSuspending ? 'Vykdoma...' : 'Taip'}
-                </button>
-                <button
-                  onClick={onCancelSuspend}
-                  disabled={isSuspending}
-                  className="inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
-                >
-                  Ne
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={onConfirmSuspend}
-                className="inline-flex items-center px-3 py-1.5 border border-red-300 text-xs font-medium rounded-md text-red-700 bg-white hover:bg-red-50 transition-colors"
-              >
-                Sustabdyti
-              </button>
             )}
           </div>
         </td>

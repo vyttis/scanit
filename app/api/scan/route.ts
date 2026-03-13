@@ -25,8 +25,9 @@ export async function POST(request: Request) {
     );
   }
 
-  // Get user's profile and org
-  const { data: profile } = await supabase
+  // Get user's profile — use service role to avoid RLS issues for superadmin (org_id=NULL)
+  const profileClient = createServiceRoleClient();
+  const { data: profile } = await profileClient
     .from('profiles')
     .select('org_id, role')
     .eq('id', user.id)
@@ -63,8 +64,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Organizacija nerasta.' }, { status: 404 });
   }
 
-  // SECURITY: Domain must be verified before scanning
-  if (!org.verified) {
+  // SECURITY: Domain must be verified before scanning (superadmin can bypass for testing)
+  if (!org.verified && !isSuperadmin) {
     return NextResponse.json(
       { error: 'Domenas nepatvirtintas. Prieš skenavimą turite patvirtinti domeno nuosavybę.' },
       { status: 403 },
