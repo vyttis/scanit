@@ -5,6 +5,7 @@ import { ScanTriggerButton } from '@/components/scan-trigger-button';
 import { FindingsList } from '@/components/findings-list';
 import { RiskScoreBadge } from '@/components/risk-score-badge';
 import { RiskTrendChart } from '@/components/risk-trend-chart';
+import { DataEnrichment } from '@/components/data-enrichment';
 import type { Finding } from '@/types/database';
 
 export default async function DashboardPage() {
@@ -233,6 +234,17 @@ export default async function DashboardPage() {
 
       {/* Risk trend chart */}
       <RiskTrendChart points={trendPoints} />
+
+      {/* Data enrichment section — shown after domain verification */}
+      {org.verified && profile.role === 'admin' && (
+        <DataEnrichment
+          orgId={org.id}
+          domainVerified={org.verified}
+          currentIpRanges={org.ip_ranges ?? []}
+          currentEmails={org.employee_emails ?? []}
+          currentSubdomains={org.subdomains ?? []}
+        />
+      )}
 
       {/* Findings list */}
       {latestScan && latestScan.status === 'completed' && (

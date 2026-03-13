@@ -25,6 +25,16 @@ export function isValidUuid(value: string): boolean {
   return UUID_REGEX.test(value);
 }
 
+const CIDR_REGEX = /^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/;
+
+export function isValidCidr(cidr: string): boolean {
+  if (!CIDR_REGEX.test(cidr)) return false;
+  const [ip, prefix] = cidr.split('/');
+  const parts = ip.split('.').map(Number);
+  const prefixNum = Number(prefix);
+  return parts.every((p) => p >= 0 && p <= 255) && prefixNum >= 0 && prefixNum <= 32;
+}
+
 export function generateVerificationToken(): string {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);

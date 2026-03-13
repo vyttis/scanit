@@ -84,3 +84,31 @@ export interface AuditLogEntry {
   ip_address: string | null;
   created_at: string;
 }
+
+export type PlanType = 'pagrindinis' | 'profesionalus';
+
+export interface PublicScan {
+  id: string;
+  domain: string;
+  email: string | null;
+  ip_address: string | null;
+  status: 'queued' | 'running' | 'completed' | 'failed';
+  results: PublicScanResults | null;
+  risk_score: number | null;
+  critical_count: number;
+  high_count: number;
+  medium_count: number;
+  low_count: number;
+  created_at: string;
+}
+
+export interface PublicScanFinding {
+  module: ScanModule;
+  severity: FindingSeverity;
+  title_lt: string;
+}
+
+export interface PublicScanResults {
+  findings: PublicScanFinding[];
+  modules_run: string[];
+}

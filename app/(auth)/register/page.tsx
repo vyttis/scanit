@@ -19,8 +19,40 @@ function extractDomain(input: string): string {
     .replace(/\/.*$/, '');
 }
 
+type PlanType = 'pagrindinis' | 'profesionalus';
+
+const PLANS: { id: PlanType; name: string; price: string; features: string[] }[] = [
+  {
+    id: 'pagrindinis',
+    name: 'Pagrindinis',
+    price: '€99/mėn.',
+    features: [
+      'Mėnesinis skenavimas',
+      'PDF ataskaita lietuvių kalba',
+      'KSĮ atitikties žemėlapis',
+      'NKSC audito dokumentas',
+      'El. pašto pranešimai',
+    ],
+  },
+  {
+    id: 'profesionalus',
+    name: 'Profesionalus',
+    price: '€299/mėn.',
+    features: [
+      'Viskas iš Pagrindinio plano',
+      'Neriboti skenavimai',
+      'IP rangų skenavimas',
+      'Darbuotojų el. paštų patikra',
+      'Subdomenų stebėjimas',
+      'Prioritetinis palaikymas',
+    ],
+  },
+];
+
 export default function RegisterPage() {
   const router = useRouter();
+  const [step, setStep] = useState<'plan' | 'details'>('plan');
+  const [plan, setPlan] = useState<PlanType>('pagrindinis');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
@@ -95,6 +127,7 @@ export default function RegisterPage() {
           orgName: orgName.trim(),
           orgWebsite: extractDomain(orgWebsite),
           password,
+          plan,
         }),
       });
 
@@ -120,6 +153,69 @@ export default function RegisterPage() {
     setLoading(false);
   }
 
+  // Step 1: Plan selection
+  if (step === 'plan') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4">
+        <div className="max-w-2xl w-full space-y-8">
+          <div className="text-center">
+            <h1 className="text-2xl font-bold text-gray-900">scanit.lt</h1>
+            <h2 className="mt-2 text-lg text-gray-600">
+              Pasirinkite planą
+            </h2>
+            <p className="mt-1 text-sm text-gray-500">
+              Pirmosios 30 dienų — nemokamai. Galėsite atšaukti bet kada.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            {PLANS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => {
+                  setPlan(p.id);
+                  setStep('details');
+                }}
+                className={`text-left p-6 rounded-xl border-2 transition-all hover:shadow-lg ${
+                  plan === p.id
+                    ? 'border-blue-600 bg-blue-50'
+                    : 'border-gray-200 bg-white hover:border-blue-300'
+                }`}
+              >
+                <div className="flex items-baseline justify-between mb-4">
+                  <h3 className="text-lg font-bold text-gray-900">{p.name}</h3>
+                  <span className="text-xl font-bold text-blue-600">{p.price}</span>
+                </div>
+                <ul className="space-y-2">
+                  {p.features.map((f) => (
+                    <li key={f} className="flex items-start gap-2 text-sm text-gray-600">
+                      <span className="text-green-500 mt-0.5 flex-shrink-0">&#10003;</span>
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-4 text-center">
+                  <span className="inline-block px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg">
+                    Pasirinkti
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          <p className="text-center text-sm text-gray-600">
+            Jau turite paskyrą?{' '}
+            <Link href="/login" className="text-blue-600 hover:text-blue-500 font-medium">
+              Prisijungti
+            </Link>
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Step 2: Registration details
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12">
       <div className="max-w-md w-full space-y-8 p-8 bg-white rounded-lg shadow-md">
@@ -130,6 +226,18 @@ export default function RegisterPage() {
           <h2 className="mt-2 text-center text-lg text-gray-600">
             Naujos paskyros registracija
           </h2>
+          <div className="mt-3 flex items-center justify-center gap-2">
+            <span className="inline-flex px-3 py-1 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
+              {PLANS.find((p) => p.id === plan)?.name} — {PLANS.find((p) => p.id === plan)?.price}
+            </span>
+            <button
+              type="button"
+              onClick={() => setStep('plan')}
+              className="text-xs text-gray-500 hover:text-blue-600 underline"
+            >
+              Keisti
+            </button>
+          </div>
         </div>
 
         <form className="mt-8 space-y-6" onSubmit={handleRegister}>
@@ -254,7 +362,7 @@ export default function RegisterPage() {
             disabled={loading}
             className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? 'Registruojama...' : 'Registruotis'}
+            {loading ? 'Registruojama...' : 'Pradėti 30 dienų nemokamą bandymą'}
           </button>
 
           <p className="text-center text-sm text-gray-600">
