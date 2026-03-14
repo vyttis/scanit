@@ -95,7 +95,7 @@ export async function POST(request: Request) {
         request.headers.get('x-real-ip') || 'unknown';
 
       await serviceClient.from('audit_log').insert({
-        org_id: profile.org_id,
+        org_id: scan.org_id,
         user_id: user.id,
         action: 'report_downloaded',
         details: { report_id: existingReport.id, scan_id: scanId },
@@ -118,7 +118,7 @@ export async function POST(request: Request) {
       request.headers.get('x-real-ip') || 'unknown';
 
     await serviceClient.from('audit_log').insert({
-      org_id: profile.org_id,
+      org_id: scan.org_id,
       user_id: user.id,
       action: 'report_generated',
       details: { report_id: result.reportId, scan_id: scanId, risk_score: result.riskScore },

@@ -237,7 +237,7 @@ export default async function ScanDetailPage({ params }: { params: { id: string 
                 className={`flex items-center gap-2 p-2 rounded-md ${
                   hasFailed ? 'bg-red-50' : 'bg-green-50'
                 }`}
-                title={hasFailed ? errorInfo?.error : 'Sėkmingai'}
+                title={hasFailed ? 'Modulis nepavyko — bandykite dar kartą' : 'Modulis sėkmingai įvykdytas'}
               >
                 {hasFailed ? (
                   <svg className="w-4 h-4 text-red-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -262,7 +262,7 @@ export default async function ScanDetailPage({ params }: { params: { id: string 
             </p>
             {scannerErrors.map((err: ScannerError, i: number) => (
               <p key={i} className="text-xs text-yellow-700">
-                <span className="font-medium">{MODULE_LABELS[err.module] || err.module}</span>: {err.error}
+                <span className="font-medium">{MODULE_LABELS[err.module] || err.module}</span>: Nepavyko gauti duomenų. Bandykite pakartoti skenavimą.
               </p>
             ))}
           </div>

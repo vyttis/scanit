@@ -26,8 +26,9 @@ export async function scanVirustotal(domain: string): Promise<ScannerResult> {
 
     console.log(`[virustotal] Response: ${res.status}`);
     if (!res.ok) {
-      const errBody = await res.text().catch(() => '');
-      console.error(`[virustotal] Error: ${errBody.slice(0, 300)}`);
+      // Discard error body — may contain API key echoes or sensitive server info
+      await res.text().catch(() => '');
+      console.error(`[virustotal] Error: HTTP ${res.status}`);
       return { module: 'virustotal', success: false, findings: [], error: `VirusTotal API returned: ${res.status}` };
     }
 

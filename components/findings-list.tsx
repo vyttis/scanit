@@ -19,18 +19,18 @@ const severityLabels: Record<string, string> = {
 
 const severityBadgeColors: Record<string, string> = {
   critical: 'bg-red-600 text-white',
-  high: 'bg-orange-500 text-white',
-  medium: 'bg-yellow-500 text-white',
-  low: 'bg-blue-500 text-white',
-  info: 'bg-green-500 text-white',
+  high: 'bg-orange-600 text-white',
+  medium: 'bg-yellow-600 text-white',
+  low: 'bg-blue-600 text-white',
+  info: 'bg-gray-500 text-white',
 };
 
 const severityBorderColors: Record<string, string> = {
   critical: 'border-l-red-600',
-  high: 'border-l-orange-500',
-  medium: 'border-l-yellow-500',
-  low: 'border-l-blue-500',
-  info: 'border-l-green-500',
+  high: 'border-l-orange-600',
+  medium: 'border-l-yellow-600',
+  low: 'border-l-blue-600',
+  info: 'border-l-gray-500',
 };
 
 const moduleLabels: Record<string, string> = {
@@ -53,6 +53,8 @@ function EvidenceBlock({ evidence }: { evidence: Record<string, unknown> | null 
       <button
         onClick={() => setOpen(!open)}
         className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1 cursor-pointer"
+        aria-expanded={open}
+        aria-label={open ? 'Slėpti techninę informaciją' : 'Rodyti techninę informaciją'}
       >
         <svg
           className={`w-3 h-3 transition-transform ${open ? 'rotate-90' : ''}`}

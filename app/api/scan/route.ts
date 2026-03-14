@@ -11,6 +11,22 @@ import { criticalFindingsHtml } from '@/lib/email/templates/critical-findings';
 
 export const maxDuration = 120;
 
+/**
+ * Sanitize scanner error messages before storing or returning to frontend.
+ * Strips references to API key env var names and raw API error details.
+ */
+function sanitizeScannerError(error: string): string {
+  // Replace env var name references like "SHODAN_API_KEY not configured"
+  if (/[A-Z_]+_API_KEY/i.test(error) || /not configured/i.test(error)) {
+    return 'Skenavimo modulis nesukonfigūruotas.';
+  }
+  // Strip raw HTTP error bodies or stack traces
+  if (error.length > 200) {
+    return error.slice(0, 200);
+  }
+  return error;
+}
+
 export async function POST(request: Request) {
   const supabase = createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -187,9 +203,10 @@ async function executeScan(
     // Track scanner success/failure for visibility
     const failedScanners = results.filter((r) => !r.success);
     const succeededScanners = results.filter((r) => r.success);
+    // Sanitize error messages: strip any references to API keys or env var names
     const scannerErrors = failedScanners.map((r) => ({
       module: r.module,
-      error: r.error ?? 'Unknown error',
+      error: sanitizeScannerError(r.error ?? 'Unknown error'),
     }));
 
     if (failedScanners.length > 0) {
@@ -408,6 +425,14 @@ export async function GET(request: Request) {
     if (!scanOrg) {
       return NextResponse.json({ error: 'Skenavimas nerastas.' }, { status: 404 });
     }
+  }
+
+  // Sanitize scanner_errors before returning to frontend
+  if (scan.scanner_errors && Array.isArray(scan.scanner_errors)) {
+    scan.scanner_errors = scan.scanner_errors.map((e: { module: string; error: string }) => ({
+      module: e.module,
+      error: sanitizeScannerError(e.error),
+    }));
   }
 
   return NextResponse.json(scan);

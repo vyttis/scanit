@@ -132,6 +132,7 @@ export function ScanTriggerButton({ orgVerified, isAdmin }: ScanTriggerButtonPro
         disabled
         className="px-4 py-2 bg-gray-300 text-gray-500 text-sm font-medium rounded-md cursor-not-allowed"
         title="Domenas turi būti patvirtintas"
+        aria-label="Pradėti skenavimą (neprieinama — domenas nepatvirtintas)"
       >
         Pradėti skenavimą
       </button>
@@ -149,6 +150,7 @@ export function ScanTriggerButton({ orgVerified, isAdmin }: ScanTriggerButtonPro
           onClick={handleTriggerScan}
           disabled={loading}
           className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          aria-label={loading ? 'Skenavimas vykdomas' : 'Pradėti domeno skenavimą'}
         >
           {loading ? 'Skenavimas vyksta...' : 'Pradėti skenavimą'}
         </button>

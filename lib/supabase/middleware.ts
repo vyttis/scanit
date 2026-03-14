@@ -36,8 +36,10 @@ export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
   // Public auth routes — accessible without login
-  const authRoutes = ['/login', '/register', '/laukiama', '/pamirsau-slaptazodi', '/naujas-slaptazodis'];
+  const authRoutes = ['/login', '/register', '/laukiama', '/pamirsau-slaptazodi', '/naujas-slaptazodis', '/registracija-gauta'];
+  const publicRoutes = ['/tikrinti', '/rezultatai'];
   const isAuthRoute = authRoutes.some(route => pathname.startsWith(route));
+  const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route));
   const isApiRoute = pathname.startsWith('/api');
   const isCallbackRoute = pathname.startsWith('/api/auth/callback');
 
@@ -45,7 +47,7 @@ export async function updateSession(request: NextRequest) {
     return supabaseResponse;
   }
 
-  if (!user && !isAuthRoute && !isApiRoute && pathname !== '/') {
+  if (!user && !isAuthRoute && !isPublicRoute && !isApiRoute && pathname !== '/') {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     return NextResponse.redirect(url);

@@ -62,6 +62,7 @@ export function ReportViewer({ scanId }: ReportViewerProps) {
           <button
             onClick={handlePrint}
             className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+            aria-label="Spausdinti ataskaitą arba išsaugoti PDF formatu"
           >
             Spausdinti / PDF
           </button>
@@ -69,6 +70,7 @@ export function ReportViewer({ scanId }: ReportViewerProps) {
             onClick={handleDownload}
             disabled={generating}
             className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-md hover:bg-blue-700 disabled:opacity-50"
+            aria-label="Atsisiųsti ataskaitą"
           >
             {generating ? 'Kraunama...' : 'Atsisiųsti'}
           </button>

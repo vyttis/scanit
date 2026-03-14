@@ -332,7 +332,7 @@ export default function RezultataiPage() {
               </p>
               <ul className="space-y-2 text-slate-300">
                 <li className="flex items-center gap-2">
-                  <span className="text-slate-500">→</span> Jūsų subdomainų
+                  <span className="text-slate-500">→</span> Jūsų subdomenų
                 </li>
                 <li className="flex items-center gap-2">
                   <span className="text-slate-500">→</span> Jūsų serverių IP adresų

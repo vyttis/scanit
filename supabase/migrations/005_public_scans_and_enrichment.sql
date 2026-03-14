@@ -1,7 +1,7 @@
 -- Migration 005: Public scans table + organization data enrichment fields
 -- Progressive data model: free scan without registration, paid enrichment
 
--- Public scans table — no RLS needed, public data
+-- Public scans table — RLS enabled, accessed only via service_role
 CREATE TABLE IF NOT EXISTS public_scans (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   domain text NOT NULL,
@@ -16,6 +16,13 @@ CREATE TABLE IF NOT EXISTS public_scans (
   low_count integer DEFAULT 0,
   created_at timestamptz DEFAULT now()
 );
+
+-- Enable RLS — all access goes through service_role (no user-facing policies needed)
+ALTER TABLE public_scans ENABLE ROW LEVEL SECURITY;
+
+-- Revoke direct access from authenticated/anon — only service_role can read/write
+REVOKE ALL ON public_scans FROM authenticated;
+REVOKE ALL ON public_scans FROM anon;
 
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_public_scans_domain ON public_scans (domain);

@@ -109,7 +109,7 @@ export function DataEnrichment({
           ? 'IP rangai išsaugoti.'
           : field === 'employee_emails'
             ? 'El. paštai išsaugoti.'
-            : 'Subdomainai išsaugoti.',
+            : 'Subdomenai išsaugoti.',
       );
       router.refresh();
     } catch {
@@ -138,7 +138,7 @@ export function DataEnrichment({
     },
     {
       key: 'subdomains' as const,
-      title: 'Subdomainų sąrašas',
+      title: 'Subdomenų sąrašas',
       count: currentSubdomains.length,
     },
   ];
@@ -251,7 +251,7 @@ export function DataEnrichment({
         {/* Subdomains */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Subdomainai
+            Subdomenai
           </label>
           <textarea
             value={subdomains}
@@ -270,7 +270,7 @@ export function DataEnrichment({
               disabled={saving === 'subdomains'}
               className="px-4 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50"
             >
-              {saving === 'subdomains' ? 'Saugoma...' : 'Pridėti subdomainus'}
+              {saving === 'subdomains' ? 'Saugoma...' : 'Pridėti subdomenus'}
             </button>
           </div>
         </div>

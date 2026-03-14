@@ -194,12 +194,12 @@ export default function TikrintiPage() {
                   Skenuojama...
                 </span>
               ) : (
-                'Skanuoti dabar'
+                'Skenuoti dabar'
               )}
             </button>
 
             <p className="text-xs text-gray-400 text-center">
-              Nemokamas skenavimas — iki 3 patikrų per dieną. Naudojame tik viešai
+              Nemokamas skenavimas — iki 4 patikrų per dieną. Naudojame tik viešai
               prieinamą informaciją.
             </p>
           </form>

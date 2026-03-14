@@ -145,7 +145,7 @@ export async function scanSecuritytrails(domain: string): Promise<ScannerResult>
         }
       }
     } catch (err) {
-      console.error(`SecurityTrails DNS history check failed for ${domain}:`, err);
+      console.error(`SecurityTrails DNS history check failed for ${domain}: ${err instanceof Error ? err.message : 'Unknown error'}`);
       // Non-critical — continue with other checks
     }
 

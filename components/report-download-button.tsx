@@ -62,6 +62,7 @@ export function ReportDownloadButton({ scanId, hasReport }: ReportDownloadButton
         onClick={handleDownload}
         disabled={loading}
         className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+        aria-label={loading ? 'Ataskaita generuojama' : 'Atsisiųsti skenavimo ataskaitą'}
       >
         {loading ? 'Kraunama...' : 'Atsisiųsti ataskaitą'}
       </button>

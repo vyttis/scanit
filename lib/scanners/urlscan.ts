@@ -26,8 +26,9 @@ export async function scanUrlscan(domain: string): Promise<ScannerResult> {
 
     console.log(`[urlscan] Response: ${searchRes.status}`);
     if (!searchRes.ok) {
-      const errBody = await searchRes.text().catch(() => '');
-      console.error(`[urlscan] Error: ${errBody.slice(0, 300)}`);
+      // Discard error body — may contain API key echoes or sensitive server info
+      await searchRes.text().catch(() => '');
+      console.error(`[urlscan] Error: HTTP ${searchRes.status}`);
       return { module: 'urlscan', success: false, findings: [], error: `URLScan API returned: ${searchRes.status}` };
     }
 

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
 
 function NewPasswordForm() {
@@ -52,7 +53,21 @@ function NewPasswordForm() {
         return;
       }
 
-      // Redirect to login on success
+      // Auto-login after successful password reset
+      if (data.email) {
+        const supabase = createClient();
+        const { error: loginError } = await supabase.auth.signInWithPassword({
+          email: data.email,
+          password,
+        });
+
+        if (!loginError) {
+          router.push('/dashboard');
+          return;
+        }
+      }
+
+      // Fallback: redirect to login if auto-login fails
       router.push('/login?reset=success');
     } catch {
       setError('Tinklo klaida. Bandykite dar kartą.');

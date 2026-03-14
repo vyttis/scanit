@@ -143,7 +143,7 @@ export default async function DashboardPage() {
               {org.verified ? 'Domenas patvirtintas' : 'Domenas nepatvirtintas'}
             </span>
           </div>
-          <ScanTriggerButton orgVerified={org.verified} isAdmin={profile.role === 'admin'} />
+          <ScanTriggerButton orgVerified={org.verified} isAdmin={profile.role === 'admin' || profile.role === 'superadmin'} />
         </div>
       </div>
 

@@ -413,7 +413,9 @@ export default function SettingsPage() {
         <h2 className="text-lg font-medium text-gray-900 mb-4">Kontaktinis el. paštas</h2>
         <form onSubmit={handleUpdateEmail} className="space-y-3">
           <div>
+            <label htmlFor="contact-email" className="sr-only">Kontaktinis el. paštas</label>
             <input
+              id="contact-email"
               type="email"
               required
               value={editEmail}

@@ -46,16 +46,17 @@ export async function POST(request: NextRequest) {
       .eq('id', user.id)
       .single();
 
-    // Generate secure token
+    // Generate secure token — store hashed, send plaintext in email
     const token = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
-    // Store token
+    // Store hashed token (defense-in-depth: if DB is compromised, tokens are unusable)
     const { error: tokenError } = await supabase
       .from('password_reset_tokens')
       .insert({
         user_id: user.id,
-        token,
+        token: tokenHash,
         expires_at: expiresAt.toISOString(),
       });
 
@@ -78,6 +79,21 @@ export async function POST(request: NextRequest) {
         firstName: profile?.first_name || 'Vartotojau',
         resetLink,
       }),
+    });
+
+    // Audit log: password reset requested
+    const { data: userProfile } = await supabase
+      .from('profiles')
+      .select('org_id')
+      .eq('id', user.id)
+      .single();
+
+    await supabase.from('audit_log').insert({
+      org_id: userProfile?.org_id || null,
+      user_id: user.id,
+      action: 'password_reset_requested',
+      details: {},
+      ip_address: ip,
     });
 
     return NextResponse.json({ success: true });

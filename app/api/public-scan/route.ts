@@ -9,7 +9,7 @@ import type { ScannerFinding } from '@/lib/scanners';
  * Key = IP address, value = timestamps of scans today.
  */
 const freeScanStore = new Map<string, number[]>();
-const FREE_SCAN_LIMIT = 3;
+const FREE_SCAN_LIMIT = 4;
 const FREE_SCAN_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 // Cleanup every 30 minutes
@@ -68,7 +68,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          'Pasiektas nemokamų skenavimų limitas (3 per dieną). Registruokitės norėdami skenuoti daugiau.',
+          'Pasiektas nemokamų skenavimų limitas (4 per dieną). Registruokitės norėdami skenuoti daugiau.',
       },
       { status: 429 },
     );

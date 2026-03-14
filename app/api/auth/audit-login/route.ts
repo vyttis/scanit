@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
+import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
 
 /**
  * POST /api/auth/audit-login — Log a successful login event.
@@ -11,6 +12,15 @@ export async function POST(request: NextRequest) {
 
   if (!user) {
     return NextResponse.json({ error: 'Neautorizuota.' }, { status: 401 });
+  }
+
+  // Rate limiting to prevent audit log flooding
+  const rateResult = checkRateLimit(`audit-login:${user.id}`);
+  if (!rateResult.allowed) {
+    return NextResponse.json(
+      { error: 'Per daug užklausų.' },
+      { status: 429, headers: rateLimitHeaders(rateResult) },
+    );
   }
 
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||

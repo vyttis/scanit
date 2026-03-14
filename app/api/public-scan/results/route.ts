@@ -1,11 +1,23 @@
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
+import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
 
 /**
  * GET /api/public-scan/results?id=<uuid>
  * Returns public scan results (findings with titles + severities only).
  */
 export async function GET(request: Request) {
+  // Rate limit by IP to prevent enumeration
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    request.headers.get('x-real-ip') || 'unknown';
+  const rateResult = checkRateLimit(`public-results:${ip}`);
+  if (!rateResult.allowed) {
+    return NextResponse.json(
+      { error: 'Per daug užklausų. Palaukite minutę.' },
+      { status: 429, headers: rateLimitHeaders(rateResult) },
+    );
+  }
+
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
 

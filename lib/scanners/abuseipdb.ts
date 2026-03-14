@@ -65,8 +65,9 @@ export async function scanAbuseipdb(domain: string): Promise<ScannerResult> {
 
     console.log(`[abuseipdb] Response: ${res.status}`);
     if (!res.ok) {
-      const errBody = await res.text().catch(() => '');
-      console.error(`[abuseipdb] Error: ${errBody.slice(0, 300)}`);
+      // Discard error body — may contain API key echoes or sensitive server info
+      await res.text().catch(() => '');
+      console.error(`[abuseipdb] Error: HTTP ${res.status}`);
       return { module: 'abuseipdb', success: false, findings: [], error: `AbuseIPDB API returned: ${res.status}` };
     }
 

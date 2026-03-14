@@ -10,7 +10,7 @@ export function isValidDomain(domain: string): boolean {
 }
 
 export function sanitizeDomain(domain: string): string {
-  return domain.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  return domain.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '');
 }
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

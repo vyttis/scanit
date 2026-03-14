@@ -45,7 +45,7 @@ function RiskScoreBadge({ score }: { score: number | null }) {
   let colorClass = 'bg-green-100 text-green-800';
   if (score >= 70) {
     colorClass = 'bg-red-100 text-red-800';
-  } else if (score >= 40) {
+  } else if (score >= 41) {
     colorClass = 'bg-yellow-100 text-yellow-800';
   }
 
@@ -237,7 +237,7 @@ export function AdminOrganizationsClient({ organizations: initialOrganizations }
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm mb-4" role="alert">
           {error}
-          <button onClick={() => setError(null)} className="ml-2 text-red-500 hover:text-red-700">&times;</button>
+          <button onClick={() => setError(null)} className="ml-2 text-red-500 hover:text-red-700" aria-label="Uždaryti klaidos pranešimą">&times;</button>
         </div>
       )}
       {successMsg && (
@@ -345,6 +345,7 @@ export function AdminOrganizationsClient({ organizations: initialOrganizations }
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+            aria-label="Ieškoti organizacijų"
           />
         </div>
       </div>
