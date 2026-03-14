@@ -50,7 +50,7 @@ export async function POST(request: Request) {
   const profileClient = createServiceRoleClient();
   const { data: profile } = await profileClient
     .from('profiles')
-    .select('org_id, role, status, plan')
+    .select('org_id, role, status')
     .eq('id', user.id)
     .single();
 
@@ -100,7 +100,8 @@ export async function POST(request: Request) {
   }
 
   // --- Plan-based scan parameter enforcement (server-side, never trust client) ---
-  const userPlan = profile?.plan || 'basic';
+  // Plan lives on organizations table, not profiles
+  const userPlan = org?.plan || 'basic';
   const requestedIpRanges: string[] = Array.isArray(body.ip_ranges) ? body.ip_ranges : [];
   const requestedSubdomains: string[] = Array.isArray(body.subdomains) ? body.subdomains : [];
   const requestedEmails: string[] = Array.isArray(body.emails) ? body.emails : [];
