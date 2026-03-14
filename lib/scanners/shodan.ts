@@ -2,11 +2,15 @@ import type { ScannerResult, ScannerFinding } from './types';
 import { fetchWithTimeout } from './types';
 
 /**
- * Shodan scanner — checks open ports, exposed services, CVEs.
- * Severity: Critical if known CVE, High if sensitive service exposed.
- * KSĮ: Art. 11(2)(e) — tinklų saugumas
+ * Shodan scanner — full-depth host intelligence.
+ * 1. DNS resolve: GET /dns/resolve?hostnames={domain}
+ * 2. Host lookup: GET /shodan/host/{ip} — ports, banners, CVEs, OS
+ * 3. Reverse DNS: GET /dns/reverse?ips={ip}
+ * 4. Domain search: GET /shodan/host/search?query=hostname:{domain}
+ * 5. CVE enrichment via cve.circl.lu
  *
- * @param options.ipRanges - Additional IP ranges to scan (professional plan)
+ * Severity: Critical if CVSS ≥9.0, High if ≥7.0 or sensitive port, Medium if ≥4.0
+ * KSĮ: Art. 11(2)(e) — tinklų saugumas
  */
 export async function scanShodan(domain: string): Promise<ScannerResult> {
   const apiKey = process.env.SHODAN_API_KEY?.trim();
@@ -15,231 +19,409 @@ export async function scanShodan(domain: string): Promise<ScannerResult> {
   }
 
   try {
-    // Resolve domain to IP first via Shodan DNS
+    const findings: ScannerFinding[] = [];
+
+    // ── Step 1: DNS resolve ──────────────────────────────────────────
     const dnsUrl = `https://api.shodan.io/dns/resolve?hostnames=${encodeURIComponent(domain)}&key=${apiKey}`;
     console.log(`[shodan] DNS resolve: ${domain}`);
     const dnsRes = await fetchWithTimeout(dnsUrl, {}, 15_000);
-
     console.log(`[shodan] DNS response: ${dnsRes.status}`);
+
     if (!dnsRes.ok) {
+      await dnsRes.text().catch(() => '');
       return { module: 'shodan', success: false, findings: [], error: `DNS resolve failed: ${dnsRes.status}` };
     }
 
     const dnsData = await dnsRes.json();
-    const ip = dnsData[domain];
+    const primaryIp: string | null = dnsData[domain] ?? null;
 
-    if (!ip) {
-      return {
+    if (!primaryIp) {
+      findings.push({
         module: 'shodan',
-        success: true,
-        findings: [{
-          module: 'shodan',
-          severity: 'info',
-          title_lt: 'Domenas nerastas Shodan duomenų bazėje',
-          description_lt: `Domenas ${domain} neturi susieto IP adreso Shodan duomenų bazėje. Tai gali reikšti, kad domenas nėra aktyvus arba yra apsaugotas per CDN/proxy.`,
-          recommendation_lt: 'Jokių papildomų veiksmų nereikia.',
-          nis2_article: null,
-          evidence: { domain, dns_result: dnsData },
-        }],
-      };
+        severity: 'info',
+        title_lt: 'Domenas nerastas Shodan duomenų bazėje',
+        description_lt: `Domenas ${domain} neturi susieto IP adreso Shodan duomenų bazėje. Tai gali reikšti, kad domenas nėra aktyvus arba yra apsaugotas per CDN/proxy.`,
+        recommendation_lt: 'Jokių papildomų veiksmų nereikia.',
+        nis2_article: null,
+        evidence: { domain, dns_result: dnsData },
+      });
+      return { module: 'shodan', success: true, findings };
     }
 
-    // Get host info
-    console.log(`[shodan] Host lookup: ${ip}`);
-    const hostRes = await fetchWithTimeout(
-      `https://api.shodan.io/shodan/host/${ip}?key=${apiKey}`,
-      {},
-      15_000,
-    );
-    console.log(`[shodan] Host response: ${hostRes.status}`);
+    // ── Step 2: Reverse DNS ──────────────────────────────────────────
+    let reverseHostnames: string[] = [];
+    try {
+      const revRes = await fetchWithTimeout(
+        `https://api.shodan.io/dns/reverse?ips=${encodeURIComponent(primaryIp)}&key=${apiKey}`,
+        {},
+        10_000,
+      );
+      if (revRes.ok) {
+        const revData = await revRes.json();
+        reverseHostnames = revData[primaryIp] || [];
+      }
+    } catch {
+      // Non-critical
+    }
 
-    if (hostRes.status === 404) {
-      return {
+    // ── Step 3: Domain search — find all IPs associated with domain ──
+    const associatedIps = new Set<string>([primaryIp]);
+    try {
+      const searchRes = await fetchWithTimeout(
+        `https://api.shodan.io/shodan/host/search?key=${apiKey}&query=hostname:${encodeURIComponent(domain)}&minify=true`,
+        {},
+        15_000,
+      );
+      if (searchRes.ok) {
+        const searchData = await searchRes.json();
+        const matches = searchData.matches || [];
+        for (const match of matches) {
+          if (match.ip_str) associatedIps.add(match.ip_str);
+        }
+      }
+    } catch {
+      // Non-critical — continue with primary IP
+    }
+
+    if (associatedIps.size > 1) {
+      findings.push({
         module: 'shodan',
-        success: true,
-        findings: [{
-          module: 'shodan',
-          severity: 'info',
-          title_lt: 'IP adresas nerastas Shodan duomenų bazėje',
-          description_lt: `IP adresas ${ip} (${domain}) nerastas Shodan duomenų bazėje. Tai reiškia, kad Shodan dar neskenavo šio adreso arba jis neturi atvirų prievadų.`,
-          recommendation_lt: 'Jokių papildomų veiksmų nereikia.',
-          nis2_article: null,
-          evidence: { domain, ip },
-        }],
-      };
+        severity: 'info',
+        title_lt: `Rasta ${associatedIps.size} IP adresų, susietų su domenu`,
+        description_lt: `Domenas ${domain} susietas su ${associatedIps.size} skirtingais IP adresais: ${Array.from(associatedIps).join(', ')}. Kiekvienas IP adresas yra atskiras atakos taškas.`,
+        recommendation_lt: 'Įsitikinkite, kad visi susieti IP adresai yra žinomi ir valdomi jūsų organizacijos.',
+        nis2_article: '11 str. 2 d. 5 p.',
+        evidence: { domain, associated_ips: Array.from(associatedIps), reverse_hostnames: reverseHostnames },
+      });
     }
 
-    if (!hostRes.ok) {
-      return { module: 'shodan', success: false, findings: [], error: `Host lookup failed: ${hostRes.status}` };
+    // ── Step 4: Host lookup for each IP ──────────────────────────────
+    const allCves: Array<{ id: string; cvss: number | null; summary: string; exploited: boolean }> = [];
+    const allPorts: Array<{ ip: string; port: number; service: string; product: string; version: string; banner: string }> = [];
+    const allVulnIps: string[] = [];
+    let osDetection: string | null = null;
+
+    const ipsToCheck = Array.from(associatedIps).slice(0, 5); // Max 5 IPs to stay within timeout
+
+    for (const ip of ipsToCheck) {
+      console.log(`[shodan] Host lookup: ${ip}`);
+      let hostRes: Response;
+      try {
+        hostRes = await fetchWithTimeout(
+          `https://api.shodan.io/shodan/host/${ip}?key=${apiKey}`,
+          {},
+          15_000,
+        );
+      } catch {
+        continue;
+      }
+
+      console.log(`[shodan] Host response for ${ip}: ${hostRes.status}`);
+
+      if (hostRes.status === 404) continue;
+      if (!hostRes.ok) {
+        await hostRes.text().catch(() => '');
+        continue;
+      }
+
+      const hostData = await hostRes.json();
+
+      // OS detection
+      if (!osDetection && hostData.os) {
+        osDetection = hostData.os;
+      }
+
+      // Collect service banners from all ports
+      const services = hostData.data || [];
+      for (const svc of services) {
+        allPorts.push({
+          ip,
+          port: svc.port || 0,
+          service: svc._shodan?.module || svc.transport || '',
+          product: svc.product || '',
+          version: svc.version || '',
+          banner: (svc.data || '').slice(0, 200),
+        });
+      }
+
+      // Collect CVEs
+      if (hostData.vulns && hostData.vulns.length > 0) {
+        allVulnIps.push(ip);
+        for (const cveId of hostData.vulns) {
+          if (!allCves.find((c) => c.id === cveId)) {
+            allCves.push({ id: cveId, cvss: null, summary: '', exploited: false });
+          }
+        }
+      }
     }
 
-    const hostData = await hostRes.json();
-    const findings: ScannerFinding[] = [];
-
-    // Check for CVEs (vulns) — enrich top CVEs with CVSS data
-    if (hostData.vulns && hostData.vulns.length > 0) {
-      // Fetch details for top 5 CVEs from cve.circl.lu (free, no auth)
-      const topCves = hostData.vulns.slice(0, 5);
-      const cveDetails: Array<{
-        id: string;
-        cvss: number | null;
-        summary: string;
-        exploited: boolean;
-      }> = [];
-
+    // ── Step 5: CVE enrichment via cve.circl.lu ──────────────────────
+    const topCves = allCves.slice(0, 10);
+    if (topCves.length > 0) {
       const cveChecks = await Promise.allSettled(
-        topCves.map(async (cveId: string) => {
+        topCves.map(async (cve) => {
           try {
             const cveRes = await fetchWithTimeout(
-              `https://cve.circl.lu/api/cve/${cveId}`,
+              `https://cve.circl.lu/api/cve/${cve.id}`,
               {},
               5_000,
             );
             if (cveRes.ok) {
-              const cveData = await cveRes.json();
-              return {
-                id: cveId,
-                cvss: cveData.cvss ?? cveData.cvss_score ?? null,
-                summary: cveData.summary || cveData.description || '',
-                exploited: !!(cveData.exploit_published || cveData.references?.some((r: string) =>
-                  r.includes('exploit') || r.includes('metasploit'))),
-              };
+              const data = await cveRes.json();
+              cve.cvss = data.cvss ?? data.cvss_score ?? null;
+              cve.summary = data.summary || data.description || '';
+              cve.exploited = !!(
+                data.exploit_published ||
+                data.references?.some((r: string) => r.includes('exploit') || r.includes('metasploit'))
+              );
             }
           } catch {
-            // Ignore individual CVE lookup failures
+            // Ignore
           }
-          return { id: cveId, cvss: null, summary: '', exploited: false };
         }),
       );
+      // Wait for all CVE lookups
+      void cveChecks;
+    }
 
-      for (const result of cveChecks) {
-        if (result.status === 'fulfilled') {
-          cveDetails.push(result.value);
-        }
-      }
+    // Sort by CVSS desc
+    allCves.sort((a, b) => (b.cvss ?? 0) - (a.cvss ?? 0));
 
-      // Sort by CVSS score (highest first)
-      cveDetails.sort((a, b) => (b.cvss ?? 0) - (a.cvss ?? 0));
+    // ── Generate findings ────────────────────────────────────────────
 
-      // Build detailed CVE list for description
-      const cveList = cveDetails.map((cve) => {
-        const cvssLabel = cve.cvss !== null
-          ? (cve.cvss >= 9 ? 'Kritinis' : cve.cvss >= 7 ? 'Aukštas' : cve.cvss >= 4 ? 'Vidutinis' : 'Žemas')
-          : 'Nežinomas';
-        const cvssStr = cve.cvss !== null ? ` (CVSS: ${cve.cvss}, ${cvssLabel})` : '';
-        const exploitStr = cve.exploited ? ' — ŽINOMAS IŠNAUDOJIMAS' : '';
-        const summaryStr = cve.summary ? `: ${cve.summary.slice(0, 150)}` : '';
-        return `${cve.id}${cvssStr}${exploitStr}${summaryStr}`;
+    // CVE findings — split by severity
+    const criticalCves = allCves.filter((c) => c.cvss !== null && c.cvss >= 9.0);
+    const highCves = allCves.filter((c) => c.cvss !== null && c.cvss >= 7.0 && c.cvss < 9.0);
+    const mediumCves = allCves.filter((c) => c.cvss !== null && c.cvss >= 4.0 && c.cvss < 7.0);
+    const unknownCves = allCves.filter((c) => c.cvss === null);
+
+    if (criticalCves.length > 0) {
+      const cveList = criticalCves.map((c) => {
+        const exploitStr = c.exploited ? ' — ŽINOMAS IŠNAUDOJIMAS' : '';
+        const summaryStr = c.summary ? `: ${c.summary.slice(0, 150)}` : '';
+        return `• ${c.id} (CVSS: ${c.cvss})${exploitStr}${summaryStr}`;
       }).join('\n');
-
-      const remainingCount = hostData.vulns.length - topCves.length;
-      const remainingStr = remainingCount > 0 ? `\n...ir dar ${remainingCount} pažeidžiamumų.` : '';
 
       findings.push({
         module: 'shodan',
         severity: 'critical',
-        title_lt: `Rastos žinomos pažeidžiamumo vietos (CVE) — ${hostData.vulns.length} vnt.`,
+        title_lt: `Kritinės pažeidžiamumo vietos (CVSS ≥9.0) — ${criticalCves.length} vnt.`,
         description_lt:
-          `Jūsų serverio IP adrese ${ip} (${domain}) aptiktos žinomos programinės įrangos pažeidžiamumo vietos. ` +
-          `Tai reiškia, kad jūsų serveryje veikianti programinė įranga turi saugumo spragų, apie kurias žino ir piktavaliai. ` +
-          `Jei šios spragos nebus uždarytos — piktavaliai gali jas panaudoti norėdami perimti serverio kontrolę, pavogti duomenis arba sustabdyti paslaugų veikimą.\n\n` +
-          `Svarbiausios pažeidžiamumo vietos:\n${cveList}${remainingStr}\n\n` +
-          `Verslo poveikis: pagal KSĮ 11 str. 2 d. 5 p. organizacija privalo užtikrinti tinklų ir informacinių sistemų saugumą. ` +
-          `Neištaisytos pažeidžiamumo vietos gali būti traktuojamos kaip KSĮ pažeidimas, už kurį gresia baudos iki 10 mln. EUR arba 2% metinės apyvartos.`,
+          `Jūsų infrastruktūroje aptiktos kritinės programinės įrangos pažeidžiamumo vietos su aukščiausiais pavojingumo balais (CVSS ≥9.0). ` +
+          `Šios spragos leidžia piktavaliams visiškai perimti serverio kontrolę, pavogti visus duomenis arba sustabdyti veiklą.\n\n` +
+          `Kritinės pažeidžiamumo vietos:\n${cveList}\n\n` +
+          `Paveikti IP adresai: ${allVulnIps.join(', ')}\n` +
+          `${osDetection ? `Aptikta operacinė sistema: ${osDetection}\n` : ''}` +
+          `Verslo poveikis: pagal KSĮ 11 str. 2 d. 5 p. organizacija privalo užtikrinti tinklų saugumą. Baudos iki 10 mln. EUR arba 2% metinės apyvartos.`,
         recommendation_lt:
-          `1. Perduokite šį CVE sąrašą IT administratoriui ir paprašykite per 7 dienas pateikti atnaujinimo planą.\n` +
-          `2. Pirmiausia taisykite CVE su aukščiausiu CVSS balu ir žinomu išnaudojimu (pažymėti "ŽINOMAS IŠNAUDOJIMAS").\n` +
-          `3. Atnaujinkite visą serverio programinę įrangą iki naujausių versijų per 30 dienų.\n` +
-          `4. Jei atnaujinti neįmanoma — apribokite prieigą prie pažeidžiamų paslaugų per užkardą (firewall).\n` +
-          `5. Po atnaujinimo pakartokite skenavimą, kad patvirtintumėte, jog pažeidžiamumai pašalinti.`,
+          `1. SKUBIAI (per 24 val.): perduokite šį CVE sąrašą IT administratoriui.\n` +
+          `2. Per 7 dienas: atnaujinkite visą programinę įrangą su kritiniais CVE.\n` +
+          `3. Jei atnaujinti neįmanoma — nedelsiant apribokite prieigą per užkardą.\n` +
+          `4. Pirmenybę teikite CVE su pažymėtu "ŽINOMAS IŠNAUDOJIMAS" — tai reiškia, kad atakos įrankiai jau egzistuoja.\n` +
+          `5. Po atnaujinimo pakartokite skenavimą.`,
         nis2_article: '11 str. 2 d. 5 p.',
         evidence: {
-          ip,
           domain,
-          vulns: hostData.vulns,
-          cve_details: cveDetails,
-          total_cve_count: hostData.vulns.length,
+          affected_ips: allVulnIps,
+          critical_cves: criticalCves,
+          os_detection: osDetection,
+          total_cve_count: allCves.length,
         },
       });
     }
 
-    // Check open ports
-    const ports: number[] = hostData.ports || [];
-    const sensitivePorts = [21, 22, 23, 25, 135, 139, 445, 1433, 1521, 3306, 3389, 5432, 5900, 6379, 27017];
-    const exposedSensitive = ports.filter((p: number) => sensitivePorts.includes(p));
+    if (highCves.length > 0) {
+      const cveList = highCves.slice(0, 8).map((c) => {
+        const exploitStr = c.exploited ? ' — ŽINOMAS IŠNAUDOJIMAS' : '';
+        return `• ${c.id} (CVSS: ${c.cvss})${exploitStr}`;
+      }).join('\n');
+
+      findings.push({
+        module: 'shodan',
+        severity: 'high',
+        title_lt: `Aukšto pavojingumo pažeidžiamumo vietos (CVSS 7.0–8.9) — ${highCves.length} vnt.`,
+        description_lt:
+          `Rastos aukšto pavojingumo programinės įrangos spragos:\n${cveList}\n\n` +
+          `Šios spragos gali leisti piktavaliams gauti dalinę prieigą prie serverio, pavogti tam tikrus duomenis arba sutrikdyti paslaugų veikimą.`,
+        recommendation_lt:
+          `1. Per 14 dienų: paruoškite atnaujinimo planą visoms aukšto pavojingumo CVE.\n` +
+          `2. Per 30 dienų: įdiekite visus atnaujinimus.\n` +
+          `3. Stebėkite serverio veiklą dėl neautorizuotos prieigos požymių.`,
+        nis2_article: '11 str. 2 d. 5 p.',
+        evidence: {
+          domain,
+          affected_ips: allVulnIps,
+          high_cves: highCves,
+        },
+      });
+    }
+
+    if (mediumCves.length > 0) {
+      findings.push({
+        module: 'shodan',
+        severity: 'medium',
+        title_lt: `Vidutinio pavojingumo pažeidžiamumo vietos (CVSS 4.0–6.9) — ${mediumCves.length} vnt.`,
+        description_lt:
+          `Rastos ${mediumCves.length} vidutinio pavojingumo programinės įrangos spragos. ` +
+          `Pavienės jos nekelia tiesioginio pavojaus, bet kartu su kitomis problemomis gali būti panaudotos atakai.`,
+        recommendation_lt:
+          `1. Įtraukite į reguliarų atnaujinimo ciklą (per 60 dienų).\n` +
+          `2. Stebėkite, ar kuris nors iš šių CVE neįgauna žinomo išnaudojimo.`,
+        nis2_article: '11 str. 2 d. 5 p.',
+        evidence: {
+          domain,
+          medium_cves: mediumCves.map((c) => ({ id: c.id, cvss: c.cvss })),
+        },
+      });
+    }
+
+    if (unknownCves.length > 0 && criticalCves.length === 0 && highCves.length === 0) {
+      findings.push({
+        module: 'shodan',
+        severity: 'high',
+        title_lt: `Rastos pažeidžiamumo vietos be CVSS balo — ${unknownCves.length} vnt.`,
+        description_lt:
+          `Aptikta ${unknownCves.length} pažeidžiamumo vietų, kurių pavojingumas negalėjo būti įvertintas automatiškai: ` +
+          `${unknownCves.slice(0, 5).map((c) => c.id).join(', ')}${unknownCves.length > 5 ? ` ir dar ${unknownCves.length - 5}` : ''}. ` +
+          `Rekomenduojama patikrinti kiekvieną rankiniu būdu.`,
+        recommendation_lt:
+          `1. IT administratorius turėtų patikrinti kiekvieną CVE ID rankiniu būdu.\n` +
+          `2. Atnaujinkite programinę įrangą iki naujausių versijų.`,
+        nis2_article: '11 str. 2 d. 5 p.',
+        evidence: { domain, unknown_cves: unknownCves.map((c) => c.id) },
+      });
+    }
+
+    // ── Open ports analysis ──────────────────────────────────────────
+    const sensitivePorts: Record<number, string> = {
+      21: 'FTP (failų perdavimas)', 22: 'SSH (nuotolinė prieiga)', 23: 'Telnet (nešifruotas)',
+      25: 'SMTP (el. paštas)', 135: 'RPC (Windows)', 139: 'NetBIOS (Windows)',
+      445: 'SMB (failų dalinimasis)', 1433: 'MS SQL duomenų bazė', 1521: 'Oracle duomenų bazė',
+      3306: 'MySQL duomenų bazė', 3389: 'RDP (nuotolinis darbalaukis)', 5432: 'PostgreSQL duomenų bazė',
+      5900: 'VNC (nuotolinis ekranas)', 6379: 'Redis (talpykla)', 27017: 'MongoDB duomenų bazė',
+      9200: 'Elasticsearch', 11211: 'Memcached', 8080: 'HTTP proxy/alternatyvus',
+    };
+
+    const exposedSensitive: Array<{ ip: string; port: number; service: string; product: string; version: string }> = [];
+    const allPortsList: Array<{ ip: string; port: number; service: string }> = [];
+
+    for (const p of allPorts) {
+      allPortsList.push({ ip: p.ip, port: p.port, service: p.service });
+      if (sensitivePorts[p.port]) {
+        exposedSensitive.push({ ip: p.ip, port: p.port, service: p.service, product: p.product, version: p.version });
+      }
+    }
 
     if (exposedSensitive.length > 0) {
-      const portDescriptions: Record<number, string> = {
-        21: 'FTP', 22: 'SSH', 23: 'Telnet', 25: 'SMTP', 135: 'RPC',
-        139: 'NetBIOS', 445: 'SMB', 1433: 'MS SQL', 1521: 'Oracle DB',
-        3306: 'MySQL', 3389: 'RDP', 5432: 'PostgreSQL', 5900: 'VNC',
-        6379: 'Redis', 27017: 'MongoDB',
-      };
-      const portList = exposedSensitive.map((p: number) => `${p} (${portDescriptions[p] || 'nežinomas'})`).join(', ');
+      const portList = exposedSensitive.map((p) => {
+        const desc = sensitivePorts[p.port] || 'nežinomas';
+        const versionStr = p.product ? ` — ${p.product}${p.version ? ' ' + p.version : ''}` : '';
+        return `• ${p.ip}:${p.port} (${desc})${versionStr}`;
+      }).join('\n');
 
       findings.push({
         module: 'shodan',
         severity: 'high',
         title_lt: `Eksponuotos jautrios paslaugos — ${exposedSensitive.length} prievadai`,
         description_lt:
-          `Jūsų serveryje ${ip} (${domain}) rasti atviri prievadai, kurie leidžia bet kam internete bandyti prisijungti prie jautrių paslaugų: ${portList}.\n\n` +
-          `Tai kaip palikti atrakintus durų užraktus — net jei turite slaptažodį, pats faktas, kad durys matomos visiems, kviečia bandyti jas atidaryti. ` +
-          `Automatizuoti įrankiai nuolat skenuoja internetą ieškodami tokių atvirų prievadų ir bando prisijungti naudodami žinomus slaptažodžius ar pažeidžiamumus.\n\n` +
-          `Verslo poveikis: per šiuos prievadus piktavaliai gali perimti jūsų serverį, pasiekti duomenų bazes, ` +
-          `šifruoti duomenis (ransomware) arba naudoti serverį atakoms prieš kitas organizacijas.`,
+          `Jūsų infrastruktūroje rasti atviri prievadai, kurie leidžia bet kam internete bandyti prisijungti prie jautrių paslaugų:\n` +
+          `${portList}\n\n` +
+          `Tai kaip palikti atrakintus durų užraktus — automatizuoti įrankiai nuolat skenuoja internetą ieškodami tokių atvirų prievadų ` +
+          `ir bando prisijungti naudodami žinomus slaptažodžius ar pažeidžiamumus.\n\n` +
+          `${reverseHostnames.length > 0 ? `Į šį IP adresą taip pat rodo kiti domenai: ${reverseHostnames.slice(0, 5).join(', ')}. ` : ''}` +
+          `Verslo poveikis: per šiuos prievadus piktavaliai gali perimti serverį, pasiekti duomenų bazes, šifruoti duomenis (ransomware).`,
         recommendation_lt:
-          `1. Nedelsdami kreipkitės į IT administratorių ir paprašykite užblokuoti šiuos prievadus per užkardą (firewall): ${portList}.\n` +
-          `2. Jei paslaugos reikalingos nuotoliniam darbui (pvz., SSH, RDP) — nustatykite VPN prieigą ir leiskite jungtis tik per VPN.\n` +
-          `3. Pakeiskite visus numatytuosius slaptažodžius šiose paslaugose.\n` +
-          `4. Terminas: per 7 dienas užblokuoti nereikalingus prievadus, per 14 dienų — nustatyti VPN.`,
+          `1. Nedelsdami kreipkitės į IT administratorių ir paprašykite užblokuoti prievadus per užkardą.\n` +
+          `2. Jei paslaugos reikalingos nuotoliniam darbui (SSH, RDP) — nustatykite VPN prieigą.\n` +
+          `3. Pakeiskite visus numatytuosius slaptažodžius.\n` +
+          `4. Duomenų bazių prievadai (MySQL, PostgreSQL, MongoDB, Redis) NIEKADA neturėtų būti prieinami iš interneto.\n` +
+          `5. Terminas: per 7 dienas užblokuoti nereikalingus prievadus, per 14 dienų nustatyti VPN.`,
         nis2_article: '11 str. 2 d. 5 p.',
-        evidence: { ip, exposed_ports: exposedSensitive, all_ports: ports, domain },
+        evidence: {
+          domain,
+          exposed_sensitive: exposedSensitive,
+          reverse_hostnames: reverseHostnames,
+          os_detection: osDetection,
+        },
       });
     }
 
-    // General open ports info
-    if (ports.length > 0 && findings.length === 0) {
-      findings.push({
-        module: 'shodan',
-        severity: 'info',
-        title_lt: `Rasti ${ports.length} atviri prievadai`,
-        description_lt: `IP adrese ${ip} (${domain}) rasti ${ports.length} atviri prievadai: ${ports.join(', ')}. Kritinių paslaugų neaptikta.`,
-        recommendation_lt: 'Periodiškai peržiūrėkite atvirų prievadų sąrašą ir uždarykite nereikalingus.',
-        nis2_article: '11 str. 2 d. 5 p.',
-        evidence: { ip, ports, domain },
-      });
-    }
+    // ── Outdated software detection ──────────────────────────────────
+    const outdatedSoftware: Array<{ ip: string; port: number; product: string; version: string }> = [];
+    for (const p of allPorts) {
+      if (!p.product || !p.version) continue;
+      const prod = p.product.toLowerCase();
+      const ver = p.version;
 
-    // Check each service banner for interesting info
-    const data = hostData.data || [];
-    for (const service of data) {
-      // Check for outdated software in banners
-      if (service.product && service.version) {
-        const banner = `${service.product} ${service.version}`;
-        // Check for known end-of-life or very old versions
-        if (service.product.toLowerCase().includes('apache') && service.version.match(/^1\./)) {
-          findings.push({
-            module: 'shodan',
-            severity: 'high',
-            title_lt: `Pasenusi programinė įranga: ${banner}`,
-            description_lt: `Prievade ${service.port} aptikta pasenusi programinė įranga: ${banner}. Senos versijos dažnai turi žinomų pažeidžiamumų, kurie nėra taisomi.`,
-            recommendation_lt: `Atnaujinkite ${service.product} iki naujausios palaikomos versijos.`,
-            nis2_article: '11 str. 2 d. 5 p.',
-            evidence: { ip, port: service.port, product: service.product, version: service.version, domain },
-          });
-        }
+      // Apache 1.x
+      if (prod.includes('apache') && ver.match(/^1\./)) {
+        outdatedSoftware.push(p);
+      }
+      // OpenSSH < 8.0
+      else if (prod.includes('openssh') && ver.match(/^[1-7]\./)) {
+        outdatedSoftware.push(p);
+      }
+      // nginx < 1.18
+      else if (prod.includes('nginx') && ver.match(/^(0\.|1\.(0|1[0-7])\.)/)) {
+        outdatedSoftware.push(p);
+      }
+      // PHP < 8.0
+      else if (prod.includes('php') && ver.match(/^[1-7]\./)) {
+        outdatedSoftware.push(p);
+      }
+      // ProFTPD, vsftpd old versions
+      else if ((prod.includes('proftpd') || prod.includes('vsftpd')) && ver.match(/^[0-2]\./)) {
+        outdatedSoftware.push(p);
+      }
+      // IIS < 10
+      else if (prod.includes('iis') && ver.match(/^[1-9]\./) && !ver.match(/^1[0-9]/)) {
+        outdatedSoftware.push(p);
       }
     }
 
+    if (outdatedSoftware.length > 0) {
+      const swList = outdatedSoftware.map((s) =>
+        `• ${s.ip}:${s.port} — ${s.product} ${s.version}`
+      ).join('\n');
+
+      findings.push({
+        module: 'shodan',
+        severity: 'high',
+        title_lt: `Pasenusi programinė įranga — ${outdatedSoftware.length} atvejų`,
+        description_lt:
+          `Aptikta pasenusi programinė įranga, kuri nebegauna saugumo atnaujinimų:\n${swList}\n\n` +
+          `Pasenusi programinė įranga dažnai turi žinomų pažeidžiamumų, kurie nėra taisomi, ` +
+          `todėl serveris tampa lengvu taikiniu.`,
+        recommendation_lt:
+          `1. Atnaujinkite kiekvieną nurodytą programą iki naujausios palaikomos versijos.\n` +
+          `2. Jei programa nebeplėtojama — pereikite prie alternatyvos.\n` +
+          `3. Terminas: per 30 dienų.`,
+        nis2_article: '11 str. 2 d. 5 p.',
+        evidence: { domain, outdated_software: outdatedSoftware },
+      });
+    }
+
+    // ── All clean ────────────────────────────────────────────────────
     if (findings.length === 0) {
       findings.push({
         module: 'shodan',
         severity: 'info',
         title_lt: 'Shodan skenavimas — problemų nerasta',
-        description_lt: `Domeno ${domain} (IP: ${ip}) Shodan analizė neparodė kritinių ar aukštų rizikų. Jokių atvirų jautrių prievadų ar žinomų pažeidžiamumų neaptikta.`,
+        description_lt:
+          `Domeno ${domain} (IP: ${primaryIp}) Shodan analizė neparodė kritinių rizikų. ` +
+          `Jokių atvirų jautrių prievadų, žinomų pažeidžiamumų ar pasenusios programinės įrangos neaptikta.\n\n` +
+          `${osDetection ? `Aptikta operacinė sistema: ${osDetection}. ` : ''}` +
+          `Atviri prievadai: ${allPortsList.length > 0 ? allPortsList.map((p) => `${p.port}`).join(', ') : 'nerasta'}.`,
         recommendation_lt: 'Tęskite periodinį stebėjimą.',
         nis2_article: null,
-        evidence: { ip, ports, domain },
+        evidence: {
+          domain,
+          ip: primaryIp,
+          associated_ips: Array.from(associatedIps),
+          ports: allPortsList,
+          os: osDetection,
+          reverse_hostnames: reverseHostnames,
+        },
       });
     }
 
