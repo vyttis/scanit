@@ -26,12 +26,14 @@ export default async function ReportViewerPage({ params }: { params: { scanId: s
   const isSuperadmin = profile?.role === 'superadmin';
   const queryClient = isSuperadmin ? serviceClient : supabase;
 
-  // Fetch report
+  // Fetch report (use limit(1) + maybeSingle to handle duplicate reports per scan)
   const { data: report } = await queryClient
     .from('reports')
     .select('id, scan_id, org_id, pdf_path')
     .eq('scan_id', scanId)
-    .single();
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
   if (!report || !report.pdf_path) {
     notFound();

@@ -78,7 +78,9 @@ export default async function ScanDetailPage({ params }: { params: { id: string 
     .from('reports')
     .select('id, risk_score, critical_count, high_count, medium_count, low_count, pdf_path')
     .eq('scan_id', scanId)
-    .single();
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
   // Count findings by severity
   const findingCounts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };

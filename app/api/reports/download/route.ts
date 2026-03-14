@@ -56,7 +56,9 @@ export async function GET(request: Request) {
     .from('reports')
     .select('id, scan_id, org_id, pdf_path')
     .eq('scan_id', scanId)
-    .single();
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
   if (!report || !report.pdf_path) {
     return NextResponse.json({ error: 'Ataskaita nerasta.' }, { status: 404 });

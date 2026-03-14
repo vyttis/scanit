@@ -81,7 +81,9 @@ export async function POST(request: Request) {
     .from('reports')
     .select('id, pdf_path')
     .eq('scan_id', scanId)
-    .single();
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
   if (existingReport?.pdf_path) {
     // Return existing report's signed URL
@@ -186,7 +188,9 @@ export async function GET(request: Request) {
     .from('reports')
     .select('id, scan_id, org_id, pdf_path, risk_score, critical_count, high_count, medium_count, low_count, created_at')
     .eq('scan_id', scanId)
-    .single();
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
   if (!report || !report.pdf_path) {
     return NextResponse.json({ error: 'Ataskaita nerasta.' }, { status: 404 });
