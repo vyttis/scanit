@@ -6,9 +6,9 @@ import { scanSecuritytrails } from './securitytrails';
 import { scanVirustotal } from './virustotal';
 import { scanAbuseipdb } from './abuseipdb';
 import { scanUrlscan } from './urlscan';
-import type { ScannerFunction, ScannerResult } from './types';
+import type { ScannerFunction, ScannerResult, ScannerOptions } from './types';
 
-export type { ScannerResult, ScannerFinding } from './types';
+export type { ScannerResult, ScannerFinding, ScannerOptions } from './types';
 
 /** Max time (ms) any single scanner is allowed to run.
  * SSL Labs needs up to 90s (5 polls × 10s + 30s retry for 529). */
@@ -36,9 +36,10 @@ function withTimeout(
   moduleName: string,
   scanner: ScannerFunction,
   domain: string,
+  options?: ScannerOptions,
 ): Promise<ScannerResult> {
   return Promise.race([
-    scanner(domain),
+    scanner(domain, options),
     new Promise<ScannerResult>((resolve) =>
       setTimeout(
         () =>
@@ -74,8 +75,11 @@ export function checkScannerEnvVars(): Record<string, boolean> {
  * a failed scanner returns an error result but does not crash others.
  * Every scanner is wrapped in a hard timeout to guard against hanging
  * DNS lookups or unresponsive APIs.
+ *
+ * @param domain - The primary domain to scan
+ * @param options - Optional extra parameters (IP ranges, subdomains, emails) for professional plan
  */
-export async function runAllScanners(domain: string): Promise<ScannerResult[]> {
+export async function runAllScanners(domain: string, options?: ScannerOptions): Promise<ScannerResult[]> {
   // Diagnostic: log which API keys are present at runtime
   const envCheck = checkScannerEnvVars();
   console.log('Scanner env var check:', JSON.stringify(envCheck));
@@ -83,7 +87,7 @@ export async function runAllScanners(domain: string): Promise<ScannerResult[]> {
   const entries = Object.entries(scanners);
 
   const results = await Promise.allSettled(
-    entries.map(([name, scanner]) => withTimeout(name, scanner, domain)),
+    entries.map(([name, scanner]) => withTimeout(name, scanner, domain, options)),
   );
 
   return results.map((result, index) => {

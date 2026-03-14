@@ -34,7 +34,15 @@ export interface Profile {
   id: string;
   org_id: string | null;
   role: UserRole;
+  plan: PlanType;
   created_at: string;
+}
+
+/** Parameters for a scan beyond the base domain. */
+export interface ScanScope {
+  ip_ranges?: string[];
+  subdomains?: string[];
+  email_count?: number; // only count stored, never actual emails
 }
 
 export interface ScannerError {
@@ -91,7 +99,7 @@ export interface AuditLogEntry {
   created_at: string;
 }
 
-export type PlanType = 'pagrindinis' | 'profesionalus';
+export type PlanType = 'free' | 'basic' | 'professional';
 
 export interface PublicScan {
   id: string;

@@ -181,6 +181,43 @@ export default async function ScanDetailPage({ params }: { params: { id: string 
         </div>
       </div>
 
+      {/* Scan scope */}
+      {scan.scan_scope && (
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-sm font-medium text-gray-500 mb-3">Skenavimo apimtis</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+            <div>
+              <span className="text-xs font-medium text-gray-500 uppercase">Domenas</span>
+              <p className="text-gray-900 mt-1">{orgDomain || '—'}</p>
+            </div>
+            <div>
+              <span className="text-xs font-medium text-gray-500 uppercase">IP rangai</span>
+              <p className="text-gray-900 mt-1">
+                {(scan.scan_scope as Record<string, unknown>).ip_ranges
+                  ? (((scan.scan_scope as Record<string, unknown>).ip_ranges as string[]).join(', '))
+                  : 'nenurodyti'}
+              </p>
+            </div>
+            <div>
+              <span className="text-xs font-medium text-gray-500 uppercase">Subdomenai</span>
+              <p className="text-gray-900 mt-1">
+                {(scan.scan_scope as Record<string, unknown>).subdomains
+                  ? `${((scan.scan_scope as Record<string, unknown>).subdomains as string[]).length} subdomenų`
+                  : 'nenurodyti'}
+              </p>
+            </div>
+            <div>
+              <span className="text-xs font-medium text-gray-500 uppercase">El. paštai</span>
+              <p className="text-gray-900 mt-1">
+                {(scan.scan_scope as Record<string, unknown>).email_count
+                  ? `${(scan.scan_scope as Record<string, unknown>).email_count} el. paštų (neišsaugoma)`
+                  : 'nenurodyti'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Risk score + finding counts */}
       {scan.status === 'completed' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

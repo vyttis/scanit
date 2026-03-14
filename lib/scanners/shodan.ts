@@ -5,6 +5,8 @@ import { fetchWithTimeout } from './types';
  * Shodan scanner — checks open ports, exposed services, CVEs.
  * Severity: Critical if known CVE, High if sensitive service exposed.
  * KSĮ: Art. 11(2)(e) — tinklų saugumas
+ *
+ * @param options.ipRanges - Additional IP ranges to scan (professional plan)
  */
 export async function scanShodan(domain: string): Promise<ScannerResult> {
   const apiKey = process.env.SHODAN_API_KEY?.trim();

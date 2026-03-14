@@ -6,6 +6,8 @@ import { resolve } from 'dns/promises';
  * AbuseIPDB scanner — checks IP abuse reports.
  * Severity: High if abuse confidence >50%.
  * KSĮ: Art. 11(2)(e) — tinklų saugumas
+ *
+ * @param options.ipRanges - Additional IP ranges to check (professional plan)
  */
 export async function scanAbuseipdb(domain: string): Promise<ScannerResult> {
   const apiKey = process.env.ABUSEIPDB_API_KEY?.trim();

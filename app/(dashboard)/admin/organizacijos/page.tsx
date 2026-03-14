@@ -79,6 +79,19 @@ export default async function AdminOrganizationsPage() {
     }
   });
 
+  // Fetch plan per organization (from first admin profile in each org)
+  const { data: profilePlans } = await serviceClient
+    .from('profiles')
+    .select('org_id, plan')
+    .not('org_id', 'is', null);
+
+  const planMap = new Map<string, string>();
+  (profilePlans || []).forEach(p => {
+    if (p.org_id && !planMap.has(p.org_id)) {
+      planMap.set(p.org_id, p.plan || 'basic');
+    }
+  });
+
   const orgs = (organizations || []).map(org => ({
     id: org.id,
     name: org.name,
@@ -91,6 +104,7 @@ export default async function AdminOrganizationsPage() {
     latestRiskScore: riskScoreMap.get(org.id) ?? null,
     totalFindings: findingsCountMap.get(org.id) || 0,
     lastScanDate: lastScanDateMap.get(org.id) ?? null,
+    plan: planMap.get(org.id) || 'basic',
   }));
 
   return <AdminOrganizationsClient organizations={orgs} />;

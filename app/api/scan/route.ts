@@ -2,12 +2,14 @@ import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supab
 import { NextResponse } from 'next/server';
 import { waitUntil } from '@vercel/functions';
 import { runAllScanners, checkScannerEnvVars } from '@/lib/scanners';
+import type { ScannerOptions } from '@/lib/scanners';
 import { generateReport } from '@/lib/report/generator';
 import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
 import { sendEmail } from '@/lib/email/send';
 import { scanStartedHtml } from '@/lib/email/templates/scan-started';
 import { scanCompletedHtml } from '@/lib/email/templates/scan-completed';
 import { criticalFindingsHtml } from '@/lib/email/templates/critical-findings';
+import { isValidCidr } from '@/lib/validations';
 
 export const maxDuration = 120;
 
@@ -48,7 +50,7 @@ export async function POST(request: Request) {
   const profileClient = createServiceRoleClient();
   const { data: profile } = await profileClient
     .from('profiles')
-    .select('org_id, role, status')
+    .select('org_id, role, status, plan')
     .eq('id', user.id)
     .single();
 
@@ -63,10 +65,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Tik administratoriai gali inicijuoti skenavimą.' }, { status: 403 });
   }
 
+  // Parse request body (may contain org_id for superadmin, plus scan scope params)
+  const body = await request.clone().json().catch(() => ({}));
+
   // Superadmin can scan any org by passing org_id in the request body
   let targetOrgId = profile?.org_id;
   if (isSuperadmin) {
-    const body = await request.clone().json().catch(() => ({}));
     targetOrgId = body.org_id || profile?.org_id;
   }
 
@@ -95,6 +99,75 @@ export async function POST(request: Request) {
     );
   }
 
+  // --- Plan-based scan parameter enforcement (server-side, never trust client) ---
+  const userPlan = profile?.plan || 'basic';
+  const requestedIpRanges: string[] = Array.isArray(body.ip_ranges) ? body.ip_ranges : [];
+  const requestedSubdomains: string[] = Array.isArray(body.subdomains) ? body.subdomains : [];
+  const requestedEmails: string[] = Array.isArray(body.emails) ? body.emails : [];
+
+  if (requestedIpRanges.length > 0 && userPlan !== 'professional' && !isSuperadmin) {
+    return NextResponse.json(
+      { error: 'IP adresų skenavimas prieinamas tik Profesionalaus plano vartotojams.' },
+      { status: 403 },
+    );
+  }
+  if (requestedSubdomains.length > 0 && userPlan !== 'professional' && !isSuperadmin) {
+    return NextResponse.json(
+      { error: 'Subdomainų skenavimas prieinamas tik Profesionalaus plano vartotojams.' },
+      { status: 403 },
+    );
+  }
+  if (requestedEmails.length > 0 && userPlan !== 'professional' && !isSuperadmin) {
+    return NextResponse.json(
+      { error: 'El. pašto skenavimas prieinamas tik Profesionalaus plano vartotojams.' },
+      { status: 403 },
+    );
+  }
+
+  // Validate IP ranges (CIDR format)
+  for (const cidr of requestedIpRanges) {
+    if (typeof cidr !== 'string' || !isValidCidr(cidr)) {
+      return NextResponse.json(
+        { error: `Netinkamas CIDR formatas: ${String(cidr).slice(0, 50)}` },
+        { status: 400 },
+      );
+    }
+  }
+
+  // Validate subdomains (basic domain format check)
+  const subdomainRegex = /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
+  for (const sub of requestedSubdomains) {
+    if (typeof sub !== 'string' || !subdomainRegex.test(sub)) {
+      return NextResponse.json(
+        { error: `Netinkamas subdomeno formatas: ${String(sub).slice(0, 50)}` },
+        { status: 400 },
+      );
+    }
+  }
+
+  // Validate emails (basic format check)
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  for (const email of requestedEmails) {
+    if (typeof email !== 'string' || !emailRegex.test(email)) {
+      return NextResponse.json(
+        { error: `Netinkamas el. pašto formatas: ${String(email).slice(0, 50)}` },
+        { status: 400 },
+      );
+    }
+  }
+
+  // Build scanner options (emails are in-memory only, never stored in DB)
+  const scannerOptions: ScannerOptions = {};
+  if (requestedIpRanges.length > 0) scannerOptions.ipRanges = requestedIpRanges;
+  if (requestedSubdomains.length > 0) scannerOptions.subdomains = requestedSubdomains;
+  if (requestedEmails.length > 0) scannerOptions.emails = requestedEmails;
+
+  // Build scan scope for storage (emails stored as count only — never actual addresses)
+  const scanScope: Record<string, unknown> = {};
+  if (requestedIpRanges.length > 0) scanScope.ip_ranges = requestedIpRanges;
+  if (requestedSubdomains.length > 0) scanScope.subdomains = requestedSubdomains;
+  if (requestedEmails.length > 0) scanScope.email_count = requestedEmails.length;
+
   // Check for duplicate concurrent scans
   const { data: activeScan } = await serviceClient
     .from('scans')
@@ -114,7 +187,7 @@ export async function POST(request: Request) {
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
     request.headers.get('x-real-ip') || 'unknown';
 
-  // Create scan record
+  // Create scan record (scan_scope stores what was scanned; emails stored as count only)
   const { data: scan, error: scanError } = await serviceClient
     .from('scans')
     .insert({
@@ -122,6 +195,7 @@ export async function POST(request: Request) {
       scan_type: 'light',
       status: 'queued',
       triggered_by: user.id,
+      scan_scope: Object.keys(scanScope).length > 0 ? scanScope : null,
     })
     .select()
     .single();
@@ -167,7 +241,7 @@ export async function POST(request: Request) {
 
   // Start scan in background — waitUntil keeps the function alive after response is sent
   waitUntil(
-    executeScan(serviceClient, scan.id, org.id, org.domain, org.name, org.contact_email, userProfile?.first_name || 'Vartotojau')
+    executeScan(serviceClient, scan.id, org.id, org.domain, org.name, org.contact_email, userProfile?.first_name || 'Vartotojau', scannerOptions)
   );
 
   return NextResponse.json({
@@ -189,6 +263,7 @@ async function executeScan(
   orgName: string,
   contactEmail: string,
   firstName: string,
+  scannerOptions?: ScannerOptions,
 ) {
   // Update scan status to running
   await serviceClient
@@ -197,8 +272,8 @@ async function executeScan(
     .eq('id', scanId);
 
   try {
-    // Run all 8 scanners in parallel
-    const results = await runAllScanners(domain);
+    // Run all 8 scanners in parallel (pass optional scope params for professional plan)
+    const results = await runAllScanners(domain, scannerOptions);
 
     // Track scanner success/failure for visibility
     const failedScanners = results.filter((r) => !r.success);

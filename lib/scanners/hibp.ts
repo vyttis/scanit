@@ -5,6 +5,8 @@ import { fetchWithTimeout } from './types';
  * HaveIBeenPwned scanner — checks breached emails by domain.
  * Severity: Critical if passwords exposed, High if emails in breach.
  * KSĮ: Art. 11(2)(i) — prieigos valdymas ir MFA
+ *
+ * @param options.emails - Specific employee emails to check (professional plan)
  */
 export async function scanHibp(domain: string): Promise<ScannerResult> {
   const apiKey = process.env.HIBP_API_KEY?.trim();

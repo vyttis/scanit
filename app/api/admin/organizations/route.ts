@@ -145,6 +145,33 @@ export async function PATCH(request: Request) {
       auditDetails = { domain: org.domain };
       break;
 
+    case 'change_plan': {
+      const validPlans = ['free', 'basic', 'professional'];
+      const newPlan = fields.plan;
+      if (!newPlan || !validPlans.includes(newPlan)) {
+        return NextResponse.json({ error: 'Netinkamas planas.' }, { status: 400 });
+      }
+      // Update plan on ALL profiles belonging to this organization
+      const { error: planError } = await serviceClient
+        .from('profiles')
+        .update({ plan: newPlan })
+        .eq('org_id', id);
+      if (planError) {
+        return NextResponse.json({ error: 'Klaida keičiant planą.' }, { status: 500 });
+      }
+      auditAction = 'org_plan_changed';
+      auditDetails = { new_plan: newPlan, org_name: org.name };
+      // Return org as-is (plan is on profiles, not organizations)
+      await serviceClient.from('audit_log').insert({
+        org_id: id,
+        user_id: user.id,
+        action: auditAction,
+        details: auditDetails,
+        ip_address: ip,
+      });
+      return NextResponse.json({ success: true, organization: { ...org, plan: newPlan } });
+    }
+
     case 'update':
       if (fields.name && typeof fields.name === 'string' && fields.name.trim().length >= 2) {
         updateData.name = fields.name.trim();

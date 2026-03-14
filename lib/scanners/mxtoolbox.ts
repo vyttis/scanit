@@ -6,6 +6,8 @@ import { resolve } from 'dns/promises';
  * Uses direct DNS lookups instead of MXToolbox API for reliability.
  * Severity: High if missing DMARC, Medium if misconfigured.
  * KSĮ: Art. 11(2)(i) — tapatumo nustatymo priemonės
+ *
+ * @param options.subdomains - Additional subdomains to check (professional plan)
  */
 export async function scanMxtoolbox(domain: string): Promise<ScannerResult> {
   try {

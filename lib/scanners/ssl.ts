@@ -14,13 +14,8 @@ function sleep(ms: number) {
  * SSL Labs scanner — checks certificate validity, expiry, cipher strength.
  * Severity: Critical if expired, High if expiring <30 days or weak cipher.
  * KSĮ: Art. 11(2)(e) — tinklų saugumas
- * Note: SSL Labs API is free and doesn't require an API key.
  *
- * The API is asynchronous:
- * 1. First call with startNew=on to trigger a fresh analysis
- * 2. Wait 15s for analysis to start
- * 3. Poll without startNew up to 4 times at 10s intervals
- * 4. If 529 (overloaded), wait 30s and retry once
+ * @param options.subdomains - Additional subdomains to check SSL on (professional plan)
  */
 export async function scanSsl(domain: string): Promise<ScannerResult> {
   try {

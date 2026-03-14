@@ -24,10 +24,17 @@ export interface ScannerResult {
   error?: string;
 }
 
+/** Optional extra parameters for scanners (professional plan). */
+export interface ScannerOptions {
+  ipRanges?: string[];
+  subdomains?: string[];
+  emails?: string[];
+}
+
 /**
  * Scanner function signature — every module exports this.
  */
-export type ScannerFunction = (domain: string) => Promise<ScannerResult>;
+export type ScannerFunction = (domain: string, options?: ScannerOptions) => Promise<ScannerResult>;
 
 /**
  * Fetch with a timeout (default 10 seconds per CLAUDE.md §7).

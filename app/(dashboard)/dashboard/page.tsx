@@ -1,12 +1,11 @@
 import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { ScanTriggerButton } from '@/components/scan-trigger-button';
+import { ScanConfigPanel } from '@/components/scan-config-panel';
 import { FindingsList } from '@/components/findings-list';
 import { RiskScoreBadge } from '@/components/risk-score-badge';
 import { RiskTrendChart } from '@/components/risk-trend-chart';
-import { DataEnrichment } from '@/components/data-enrichment';
-import type { Finding } from '@/types/database';
+import type { Finding, PlanType } from '@/types/database';
 import { formatLithuanianDateShort, formatLithuanianDateLong, formatLithuanianTime, formatLithuanianDate } from '@/lib/utils/date';
 
 export default async function DashboardPage() {
@@ -19,7 +18,7 @@ export default async function DashboardPage() {
   const serviceClient = createServiceRoleClient();
   const { data: profile } = await serviceClient
     .from('profiles')
-    .select('org_id, role')
+    .select('org_id, role, plan')
     .eq('id', user.id)
     .single();
 
@@ -143,7 +142,12 @@ export default async function DashboardPage() {
               {org.verified ? 'Domenas patvirtintas' : 'Domenas nepatvirtintas'}
             </span>
           </div>
-          <ScanTriggerButton orgVerified={org.verified} isAdmin={profile.role === 'admin' || profile.role === 'superadmin'} />
+          <ScanConfigPanel
+            orgVerified={org.verified}
+            isAdmin={profile.role === 'admin' || profile.role === 'superadmin'}
+            domain={org.domain}
+            plan={(profile.plan as PlanType) || 'basic'}
+          />
         </div>
       </div>
 
@@ -242,15 +246,36 @@ export default async function DashboardPage() {
       {/* Risk trend chart */}
       <RiskTrendChart points={trendPoints} />
 
-      {/* Data enrichment section — shown after domain verification */}
-      {org.verified && profile.role === 'admin' && (
-        <DataEnrichment
-          orgId={org.id}
-          domainVerified={org.verified}
-          currentIpRanges={org.ip_ranges ?? []}
-          currentEmails={org.employee_emails ?? []}
-          currentSubdomains={org.subdomains ?? []}
-        />
+      {/* Plan upsell card — shown only to basic plan users */}
+      {(profile.plan || 'basic') !== 'professional' && profile.role === 'admin' && (
+        <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-lg shadow-md p-6 text-white">
+          <h3 className="text-base font-bold mb-2">
+            Padidinkite skenavimo tikslumą
+          </h3>
+          <p className="text-sm text-slate-300 mb-3">
+            Šiuo metu tikrinama: tik domenas
+          </p>
+          <p className="text-sm text-slate-300 mb-4">
+            Profesionalaus plano vartotojai taip pat gali tikrinti:
+          </p>
+          <ul className="space-y-1.5 text-sm text-slate-300 mb-5">
+            <li className="flex items-center gap-2">
+              <span className="text-slate-500">→</span> IP adresų infrastruktūrą
+            </li>
+            <li className="flex items-center gap-2">
+              <span className="text-slate-500">→</span> Kiekvieną subdomeną atskirai
+            </li>
+            <li className="flex items-center gap-2">
+              <span className="text-slate-500">→</span> Darbuotojų el. paštų nutekėjimus
+            </li>
+          </ul>
+          <Link
+            href="/settings#plan"
+            className="inline-block px-5 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Sužinoti daugiau apie Profesionalų planą
+          </Link>
+        </div>
       )}
 
       {/* Findings list */}

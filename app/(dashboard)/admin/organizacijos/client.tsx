@@ -23,6 +23,12 @@ const SECTOR_LABELS: Record<string, string> = {
 
 const SECTOR_OPTIONS = Object.entries(SECTOR_LABELS).map(([value, label]) => ({ value, label }));
 
+const PLAN_LABELS: Record<string, string> = {
+  free: 'Nemokamas',
+  basic: 'Pagrindinis',
+  professional: 'Profesionalus',
+};
+
 interface Organization {
   id: string;
   name: string;
@@ -35,6 +41,7 @@ interface Organization {
   latestRiskScore: number | null;
   totalFindings: number;
   lastScanDate: string | null;
+  plan: string;
 }
 
 function RiskScoreBadge({ score }: { score: number | null }) {
@@ -220,6 +227,33 @@ export function AdminOrganizationsClient({ organizations: initialOrganizations }
       }
     } catch {
       setScanMessage({ orgId, text: 'Tinklo klaida.', type: 'error' });
+    }
+
+    setLoadingAction(null);
+  }
+
+  async function handlePlanChange(orgId: string, newPlan: string) {
+    setLoadingAction(`${orgId}:plan`);
+    setError(null);
+
+    try {
+      const res = await fetch('/api/admin/organizations', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: orgId, action: 'change_plan', plan: newPlan }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setOrgs(prev => prev.map(o =>
+          o.id === orgId ? { ...o, plan: newPlan } : o
+        ));
+        showSuccess(`Planas pakeistas į „${PLAN_LABELS[newPlan] || newPlan}".`);
+        router.refresh();
+      } else {
+        setError(data.error || 'Klaida keičiant planą.');
+      }
+    } catch {
+      setError('Tinklo klaida.');
     }
 
     setLoadingAction(null);
@@ -443,6 +477,7 @@ export function AdminOrganizationsClient({ organizations: initialOrganizations }
                   })
                 }
                 onScan={() => handleScan(org.id)}
+                onPlanChange={(plan) => handlePlanChange(org.id, plan)}
                 isLoading={loadingAction?.startsWith(org.id) ?? false}
                 scanMessage={scanMessage?.orgId === org.id ? scanMessage : null}
               />
@@ -462,6 +497,7 @@ interface OrgRowProps {
   onUnverify: () => void;
   onDelete: () => void;
   onScan: () => void;
+  onPlanChange: (plan: string) => void;
   isLoading: boolean;
   scanMessage: { text: string; type: 'success' | 'error' | 'info' } | null;
 }
@@ -474,6 +510,7 @@ function OrgRow({
   onUnverify,
   onDelete,
   onScan,
+  onPlanChange,
   isLoading,
   scanMessage,
 }: OrgRowProps) {
@@ -601,6 +638,20 @@ function OrgRow({
               <div>
                 <span className="font-medium text-gray-500">Iš viso nustatytų trūkumų</span>
                 <p className="mt-1 text-gray-900">{org.totalFindings}</p>
+              </div>
+              <div>
+                <span className="font-medium text-gray-500">Planas</span>
+                <select
+                  value={org.plan}
+                  onChange={(e) => onPlanChange(e.target.value)}
+                  disabled={isLoading}
+                  className="mt-1 block w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm text-gray-900 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <option value="free">Nemokamas</option>
+                  <option value="basic">Pagrindinis</option>
+                  <option value="professional">Profesionalus</option>
+                </select>
               </div>
             </div>
           </td>
