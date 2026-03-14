@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { AdminNav } from '@/components/admin-nav';
 import { formatLithuanianDateLong, formatLithuanianDateTimeLong } from '@/lib/utils/date';
@@ -59,6 +59,11 @@ function RiskScoreBadge({ score }: { score: number | null }) {
 export function AdminOrganizationsClient({ organizations: initialOrganizations }: { organizations: Organization[] }) {
   const router = useRouter();
   const [orgs, setOrgs] = useState(initialOrganizations);
+
+  // Sync local state when server data refreshes (e.g. after router.refresh())
+  useEffect(() => {
+    setOrgs(initialOrganizations);
+  }, [initialOrganizations]);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
