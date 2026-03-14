@@ -230,7 +230,6 @@ export default async function ScanDetailPage({ params }: { params: { id: string 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {ALL_MODULES.map((mod) => {
             const hasFailed = failedModules.has(mod);
-            const errorInfo = scannerErrors.find((e: ScannerError) => e.module === mod);
             return (
               <div
                 key={mod}
