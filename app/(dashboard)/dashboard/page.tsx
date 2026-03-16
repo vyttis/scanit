@@ -18,7 +18,7 @@ export default async function DashboardPage() {
   const serviceClient = createServiceRoleClient();
   const { data: profile } = await serviceClient
     .from('profiles')
-    .select('org_id, role, plan')
+    .select('org_id, role')
     .eq('id', user.id)
     .single();
 
@@ -146,7 +146,7 @@ export default async function DashboardPage() {
             orgVerified={org.verified}
             isAdmin={profile.role === 'admin' || profile.role === 'superadmin'}
             domain={org.domain}
-            plan={(profile.plan as PlanType) || 'basic'}
+            plan={((org as Record<string, unknown>).plan as PlanType) || 'basic'}
           />
         </div>
       </div>
@@ -247,7 +247,7 @@ export default async function DashboardPage() {
       <RiskTrendChart points={trendPoints} />
 
       {/* Plan upsell card — shown only to basic plan users */}
-      {(profile.plan || 'basic') !== 'professional' && profile.role === 'admin' && (
+      {((org as Record<string, unknown>).plan || 'basic') !== 'professional' && profile.role === 'admin' && (
         <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-lg shadow-md p-6 text-white">
           <h3 className="text-base font-bold mb-2">
             Padidinkite skenavimo tikslumą

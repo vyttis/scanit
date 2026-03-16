@@ -151,17 +151,16 @@ export async function PATCH(request: Request) {
       if (!newPlan || !validPlans.includes(newPlan)) {
         return NextResponse.json({ error: 'Netinkamas planas.' }, { status: 400 });
       }
-      // Update plan on ALL profiles belonging to this organization
+      // Update plan on the organization (plan lives on organizations table)
       const { error: planError } = await serviceClient
-        .from('profiles')
+        .from('organizations')
         .update({ plan: newPlan })
-        .eq('org_id', id);
+        .eq('id', id);
       if (planError) {
         return NextResponse.json({ error: 'Klaida keičiant planą.' }, { status: 500 });
       }
       auditAction = 'org_plan_changed';
       auditDetails = { new_plan: newPlan, org_name: org.name };
-      // Return org as-is (plan is on profiles, not organizations)
       await serviceClient.from('audit_log').insert({
         org_id: id,
         user_id: user.id,

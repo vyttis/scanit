@@ -74,11 +74,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Mark token as used
+    // Invalidate ALL tokens for this user (not just the one used)
     await supabase
       .from('password_reset_tokens')
       .update({ used: true })
-      .eq('id', tokenRecord.id);
+      .eq('user_id', tokenRecord.user_id);
 
     // Audit log: password reset completed
     const { data: userProfile } = await supabase
@@ -95,11 +95,7 @@ export async function POST(request: NextRequest) {
       ip_address: ip,
     });
 
-    // Get user email for auto-login
-    const { data: authUser } = await supabase.auth.admin.getUserById(tokenRecord.user_id);
-    const userEmail = authUser?.user?.email;
-
-    return NextResponse.json({ success: true, email: userEmail || null });
+    return NextResponse.json({ success: true });
   } catch (err) {
     console.error('Password reset confirm error:', err);
     return NextResponse.json(

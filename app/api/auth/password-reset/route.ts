@@ -30,9 +30,13 @@ export async function POST(request: NextRequest) {
 
     const supabase = createServiceRoleClient();
 
-    // Look up user by email
-    const { data: users } = await supabase.auth.admin.listUsers();
-    const user = users?.users?.find(u => u.email === email.toLowerCase());
+    // Look up user by email (paginated listUsers would miss users beyond page 1)
+    const { data: users } = await supabase.auth.admin.listUsers({
+      page: 1,
+      perPage: 1,
+      filter: email.toLowerCase(),
+    } as Parameters<typeof supabase.auth.admin.listUsers>[0]);
+    const user = users?.users?.[0];
 
     // Always return success to prevent email enumeration
     if (!user) {

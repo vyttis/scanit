@@ -1,5 +1,6 @@
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
+import { waitUntil } from '@vercel/functions';
 import { isValidDomain, sanitizeDomain, isValidEmail } from '@/lib/validations';
 import { runAllScanners } from '@/lib/scanners';
 import type { ScannerFinding } from '@/lib/scanners';
@@ -133,10 +134,12 @@ export async function POST(request: Request) {
     );
   }
 
-  // Run scan in background
-  executePublicScan(serviceClient, scan.id, domain).catch((err) => {
-    console.error(`Public scan ${scan.id} error:`, err);
-  });
+  // Run scan in background — waitUntil keeps the function alive after response is sent
+  waitUntil(
+    executePublicScan(serviceClient, scan.id, domain).catch((err) => {
+      console.error(`Public scan ${scan.id} error:`, err);
+    })
+  );
 
   return NextResponse.json({
     id: scan.id,

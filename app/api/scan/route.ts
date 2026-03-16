@@ -356,7 +356,7 @@ async function executeScan(
         .update({
           scanner_errors: [
             ...scannerErrors,
-            { module: 'report_generation', error: reportErr instanceof Error ? reportErr.message : 'Unknown error' },
+            { module: 'report_generation', error: sanitizeScannerError(reportErr instanceof Error ? reportErr.message : 'Unknown error') },
           ],
         })
         .eq('id', scanId);
@@ -461,7 +461,23 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Skenavimas nerastas.' }, { status: 404 });
   }
 
+  // For non-superadmin, verify they can only see their own org's scans
+  // This MUST happen before any write operations to prevent cross-org updates
+  if (!isSuperadmin && profile?.org_id) {
+    const { data: scanOrg } = await supabase
+      .from('scans')
+      .select('id')
+      .eq('id', scanId)
+      .eq('org_id', profile.org_id)
+      .single();
+
+    if (!scanOrg) {
+      return NextResponse.json({ error: 'Skenavimas nerastas.' }, { status: 404 });
+    }
+  }
+
   // Stale scan detection: if running/queued for more than 10 minutes, auto-mark as failed
+  // Only after ownership is verified above
   const STALE_SCAN_TIMEOUT_MS = 10 * 60 * 1000;
   if (
     (scan.status === 'running' || scan.status === 'queued') &&
@@ -480,20 +496,6 @@ export async function GET(request: Request) {
     scan.status = 'failed';
     scan.completed_at = new Date().toISOString();
     scan.scanner_errors = timeoutError;
-  }
-
-  // For non-superadmin, verify they can only see their own org's scans
-  if (!isSuperadmin && profile?.org_id) {
-    const { data: scanOrg } = await supabase
-      .from('scans')
-      .select('id')
-      .eq('id', scanId)
-      .eq('org_id', profile.org_id)
-      .single();
-
-    if (!scanOrg) {
-      return NextResponse.json({ error: 'Skenavimas nerastas.' }, { status: 404 });
-    }
   }
 
   // Sanitize scanner_errors before returning to frontend
