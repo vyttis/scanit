@@ -163,12 +163,6 @@ export async function POST(request: Request) {
   if (requestedSubdomains.length > 0) scannerOptions.subdomains = requestedSubdomains;
   if (requestedEmails.length > 0) scannerOptions.emails = requestedEmails;
 
-  // Build scan scope for storage (emails stored as count only — never actual addresses)
-  const scanScope: Record<string, unknown> = {};
-  if (requestedIpRanges.length > 0) scanScope.ip_ranges = requestedIpRanges;
-  if (requestedSubdomains.length > 0) scanScope.subdomains = requestedSubdomains;
-  if (requestedEmails.length > 0) scanScope.email_count = requestedEmails.length;
-
   // Check for duplicate concurrent scans
   const { data: activeScan } = await serviceClient
     .from('scans')
@@ -188,7 +182,7 @@ export async function POST(request: Request) {
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
     request.headers.get('x-real-ip') || 'unknown';
 
-  // Create scan record (scan_scope stores what was scanned; emails stored as count only)
+  // Create scan record
   const { data: scan, error: scanError } = await serviceClient
     .from('scans')
     .insert({
@@ -196,7 +190,6 @@ export async function POST(request: Request) {
       scan_type: 'light',
       status: 'queued',
       triggered_by: user.id,
-      scan_scope: Object.keys(scanScope).length > 0 ? scanScope : null,
     })
     .select()
     .single();
