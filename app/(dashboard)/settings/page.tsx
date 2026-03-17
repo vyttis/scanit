@@ -6,6 +6,91 @@ import { isValidDomain, sanitizeDomain, isValidEmail } from '@/lib/validations';
 import type { Organization, OrganizationSector } from '@/types/database';
 import Link from 'next/link';
 
+function AutoScanSettings({ orgId, initialEnabled, initialDay }: { orgId: string; initialEnabled: boolean; initialDay: number }) {
+  const supabase = createClient();
+  const [enabled, setEnabled] = useState(initialEnabled);
+  const [day, setDay] = useState(initialDay);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function handleSave() {
+    setSaving(true);
+    setMessage(null);
+    const { error } = await supabase
+      .from('organizations')
+      .update({ auto_scan_enabled: enabled, auto_scan_day: day })
+      .eq('id', orgId);
+
+    if (error) {
+      setMessage('Klaida išsaugant nustatymus.');
+    } else {
+      setMessage('Automatinio skenavimo nustatymai išsaugoti.');
+    }
+    setSaving(false);
+  }
+
+  return (
+    <div className="bg-white rounded-lg shadow-md p-6">
+      <h2 className="text-lg font-medium text-gray-900 mb-2">Automatinis mėnesinis skenavimas</h2>
+      <p className="text-sm text-gray-600 mb-4">
+        Įjungus automatinį skenavimą, platforma kas mėnesį atliks skenavimą pasirinktą dieną.
+        Tai užtikrina, kad organizacija viršija KSĮ reikalavimą skenuoti kas 6 mėnesius.
+      </p>
+
+      <div className="space-y-4">
+        <label className="flex items-center gap-3 cursor-pointer">
+          <div className="relative">
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={(e) => setEnabled(e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-10 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" />
+          </div>
+          <span className="text-sm font-medium text-gray-700">
+            {enabled ? 'Automatinis skenavimas įjungtas' : 'Automatinis skenavimas išjungtas'}
+          </span>
+        </label>
+
+        {enabled && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Skenavimo diena (mėnesio)
+            </label>
+            <select
+              value={day}
+              onChange={(e) => setDay(parseInt(e.target.value, 10))}
+              className="block w-full max-w-[200px] px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+            >
+              {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+                <option key={d} value={d}>{d} d.</option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-gray-500">
+              Kitas skenavimas: kiekvieno mėnesio {day} d.
+            </p>
+          </div>
+        )}
+
+        {message && (
+          <p className={`text-sm ${message.includes('išsaugoti') ? 'text-green-600' : 'text-red-600'}`}>
+            {message}
+          </p>
+        )}
+
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {saving ? 'Saugoma...' : 'Išsaugoti nustatymus'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 const SECTORS: { value: OrganizationSector; label: string }[] = [
   { value: 'energetika', label: 'Energetika' },
   { value: 'transportas', label: 'Transportas' },
@@ -437,6 +522,11 @@ export default function SettingsPage() {
           </button>
         </form>
       </div>
+
+      {/* Auto-scan settings — admin only, verified org */}
+      {org?.verified && userRole === 'admin' && (
+        <AutoScanSettings orgId={org.id} initialEnabled={(org as unknown as Record<string, unknown>).auto_scan_enabled as boolean ?? false} initialDay={(org as unknown as Record<string, unknown>).auto_scan_day as number ?? 1} />
+      )}
 
       {/* Audit log link — admin only */}
       {userRole === 'admin' && (

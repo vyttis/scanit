@@ -311,7 +311,11 @@ export default async function ScanDetailPage({ params }: { params: { id: string 
       {scan.status === 'completed' && (
         <div>
           <h2 className="text-lg font-bold text-gray-900 mb-4">Nustatyti trūkumai</h2>
-          <FindingsList findings={findings} />
+          <FindingsList
+            findings={findings}
+            isAdmin={profile?.role === 'admin' || isSuperadmin}
+            scanId={scan.id}
+          />
         </div>
       )}
 

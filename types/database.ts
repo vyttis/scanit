@@ -94,6 +94,19 @@ export interface AuditLogEntry {
 
 export type PlanType = 'free' | 'basic' | 'professional';
 
+export type FindingStatusType = 'open' | 'in_progress' | 'resolved' | 'accepted_risk' | 'false_positive';
+
+export interface FindingStatus {
+  id: string;
+  finding_id: string;
+  org_id: string;
+  status: FindingStatusType;
+  note: string | null;
+  updated_by: string | null;
+  updated_at: string;
+  created_at: string;
+}
+
 export interface PublicScan {
   id: string;
   domain: string;

@@ -2,6 +2,8 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 import { generateExecutiveSummary, generateFindingDescription } from '@/lib/claude/generate-finding-text';
 import type { Finding } from '@/types/database';
 import { formatReportDate } from '@/lib/utils/date';
+import { computeScanDelta, type ScanDelta } from '@/lib/utils/scan-delta';
+import { evaluateCompliance, calculateCompliancePercentage, type ArticleComplianceResult } from '@/lib/utils/compliance-mapping';
 
 // ---------------------------------------------------------------------------
 // Risk scoring
@@ -75,6 +77,10 @@ interface ReportData {
   mediumCount: number;
   lowCount: number;
   reportId: string;
+  scanDelta?: ScanDelta | null;
+  complianceResults?: ArticleComplianceResult[];
+  compliancePercent?: number;
+  trendScores?: { date: string; score: number }[];
 }
 
 function buildReportHtml(data: ReportData): string {
@@ -159,6 +165,56 @@ function buildReportHtml(data: ReportData): string {
 <p style="margin-top:16px;font-size:13px;color:#6b7280;font-style:italic;">
   Pagal Kibernetinio saugumo reikalavimų aprašo 45.8 punktą, organizacijos privalo atlikti pažeidžiamumų skenavimą ne rečiau kaip kartą per 6 mėnesius. Ši ataskaita įrodo, kad reikalavimas įvykdytas ${escapeHtml(data.scanDate)}.
 </p>
+
+${data.scanDelta ? `
+<h2 style="font-size:18px;margin-top:24px;">Palyginimas su praėjusiu skaitymu</h2>
+<table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
+  <tr>
+    <td style="text-align:center;padding:12px;background:#fef2f2;border-radius:8px;"><span style="color:#dc2626;font-size:24px;font-weight:700;">${data.scanDelta.newCount}</span><br><small style="color:#991b1b;">Nauji trūkumai</small></td>
+    <td style="width:8px;"></td>
+    <td style="text-align:center;padding:12px;background:#f0fdf4;border-radius:8px;"><span style="color:#16a34a;font-size:24px;font-weight:700;">${data.scanDelta.resolvedCount}</span><br><small style="color:#166534;">Išspręsti</small></td>
+    <td style="width:8px;"></td>
+    <td style="text-align:center;padding:12px;background:#f9fafb;border-radius:8px;"><span style="color:#6b7280;font-size:24px;font-weight:700;">${data.scanDelta.persistentCount}</span><br><small style="color:#374151;">Išlikę</small></td>
+  </tr>
+</table>
+` : ''}
+
+${data.complianceResults ? `
+<h2 style="font-size:18px;margin-top:24px;">KSĮ atitikties santrauka — ${data.compliancePercent ?? 0}%</h2>
+<table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:13px;">
+  <tr style="background:#f9fafb;">
+    <th style="text-align:left;padding:8px;border-bottom:1px solid #e5e7eb;">Straipsnis</th>
+    <th style="text-align:left;padding:8px;border-bottom:1px solid #e5e7eb;">Reikalavimas</th>
+    <th style="text-align:center;padding:8px;border-bottom:1px solid #e5e7eb;">Būsena</th>
+    <th style="text-align:center;padding:8px;border-bottom:1px solid #e5e7eb;">Trūkumų</th>
+  </tr>
+  ${data.complianceResults.map(r => {
+    const statusColor = r.status === 'pass' ? '#16a34a' : r.status === 'partial' ? '#ca8a04' : r.status === 'fail' ? '#dc2626' : '#6b7280';
+    const statusLabel = r.status === 'pass' ? 'Atitinka' : r.status === 'partial' ? 'Dalinis' : r.status === 'fail' ? 'Neatitinka' : 'Netikrinta';
+    return `<tr>
+      <td style="padding:8px;border-bottom:1px solid #f3f4f6;">${escapeHtml(r.article.id)}</td>
+      <td style="padding:8px;border-bottom:1px solid #f3f4f6;">${escapeHtml(r.article.title)}</td>
+      <td style="text-align:center;padding:8px;border-bottom:1px solid #f3f4f6;"><span style="color:${statusColor};font-weight:600;">${statusLabel}</span></td>
+      <td style="text-align:center;padding:8px;border-bottom:1px solid #f3f4f6;">${r.findingCount || '—'}</td>
+    </tr>`;
+  }).join('')}
+</table>
+` : ''}
+
+${data.trendScores && data.trendScores.length >= 2 ? `
+<h2 style="font-size:18px;margin-top:24px;">Rizikos balo tendencija</h2>
+<div style="display:flex;align-items:flex-end;gap:8px;height:100px;margin-bottom:16px;">
+  ${data.trendScores.map(t => {
+    const height = Math.max(4, t.score);
+    const color = t.score >= 70 ? '#dc2626' : t.score >= 41 ? '#ca8a04' : '#16a34a';
+    return `<div style="flex:1;text-align:center;">
+      <div style="font-size:11px;font-weight:600;color:${color};margin-bottom:4px;">${t.score}</div>
+      <div style="background:${color};height:${height}px;border-radius:4px 4px 0 0;"></div>
+      <div style="font-size:10px;color:#6b7280;margin-top:4px;">${escapeHtml(t.date)}</div>
+    </div>`;
+  }).join('')}
+</div>
+` : ''}
 
 <div class="footer">
   <em>Ši ataskaita parengta vadovaujantis Kibernetinio saugumo įstatymo (2024 m. spalio 3 d. Nr. XIV-2960) ir Kibernetinio saugumo reikalavimų aprašo reikalavimais. Nustatyti trūkumai vertinami pagal NKSC paskelbtas gaires ir ES NIS2 direktyvos (2022/2555) nuostatas.</em>
@@ -305,7 +361,48 @@ export async function generateReport(scanId: string): Promise<GenerateReportResu
     riskScore,
   );
 
-  // 6. Build HTML report
+  // 6. Compute scan delta (vs previous scan)
+  let scanDelta: ScanDelta | null = null;
+  const { data: prevScansArr } = await serviceClient
+    .from('scans')
+    .select('id')
+    .eq('org_id', org.id)
+    .eq('status', 'completed')
+    .neq('id', scanId)
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (prevScansArr?.[0]) {
+    const { data: prevFindings } = await serviceClient
+      .from('findings')
+      .select('*')
+      .eq('scan_id', prevScansArr[0].id);
+
+    if (prevFindings && prevFindings.length > 0) {
+      scanDelta = computeScanDelta(enrichedFindings, prevFindings as Finding[]);
+    }
+  }
+
+  // 7. Compute compliance
+  const complianceResults = evaluateCompliance(enrichedFindings);
+  const compliancePercent = calculateCompliancePercentage(complianceResults);
+
+  // 8. Get trend data (last 6 reports)
+  const { data: trendReports } = await serviceClient
+    .from('reports')
+    .select('risk_score, created_at')
+    .eq('org_id', org.id)
+    .order('created_at', { ascending: true })
+    .limit(6);
+
+  const trendScores = (trendReports ?? [])
+    .filter((r) => r.risk_score !== null)
+    .map((r) => ({
+      date: formatReportDate(r.created_at),
+      score: r.risk_score as number,
+    }));
+
+  // 9. Build HTML report
   const scanDate = formatReportDate(scan.completed_at || new Date());
 
   const reportId = crypto.randomUUID();
@@ -321,6 +418,10 @@ export async function generateReport(scanId: string): Promise<GenerateReportResu
     mediumCount,
     lowCount,
     reportId,
+    scanDelta,
+    complianceResults,
+    compliancePercent,
+    trendScores,
   });
 
   // 7. Try PDF generation via Puppeteer + chromium-min, fall back to HTML

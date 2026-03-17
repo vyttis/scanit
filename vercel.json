@@ -11,6 +11,14 @@
     {
       "path": "/api/scan/cleanup",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/monthly-scan",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/sla-alerts",
+      "schedule": "0 7 * * *"
     }
   ],
   "headers": [

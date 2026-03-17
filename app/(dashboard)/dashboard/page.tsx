@@ -7,6 +7,9 @@ import { RiskScoreBadge } from '@/components/risk-score-badge';
 import { RiskTrendChart } from '@/components/risk-trend-chart';
 import type { Finding, PlanType } from '@/types/database';
 import { formatLithuanianDateShort, formatLithuanianDateLong, formatLithuanianTime, formatLithuanianDate } from '@/lib/utils/date';
+import { computeScanDelta, type ScanDelta } from '@/lib/utils/scan-delta';
+import { countOverdue } from '@/lib/utils/sla';
+import type { FindingSeverity } from '@/types/database';
 
 export default async function DashboardPage() {
   const supabase = createServerSupabaseClient();
@@ -120,6 +123,68 @@ export default async function DashboardPage() {
       });
     }
   }
+
+  // Fetch finding statuses for remediation tracking
+  const findingStatuses: Record<string, { status: import('@/types/database').FindingStatusType; note: string | null }> = {};
+  if (findings.length > 0) {
+    const { data: statuses } = await supabase
+      .from('finding_status')
+      .select('finding_id, status, note')
+      .eq('org_id', org.id);
+
+    if (statuses) {
+      for (const s of statuses) {
+        findingStatuses[s.finding_id] = { status: s.status, note: s.note };
+      }
+    }
+  }
+
+  // Compute scan delta (compare with previous scan)
+  let scanDelta: ScanDelta | null = null;
+  if (latestScan && latestScan.status === 'completed' && findings.length > 0) {
+    const { data: prevScansArr } = await supabase
+      .from('scans')
+      .select('id')
+      .eq('org_id', org.id)
+      .eq('status', 'completed')
+      .order('created_at', { ascending: false })
+      .limit(2);
+
+    const prevScan = prevScansArr?.[1]; // second most recent completed scan
+    if (prevScan) {
+      const { data: prevFindings } = await supabase
+        .from('findings')
+        .select('*')
+        .eq('scan_id', prevScan.id);
+
+      if (prevFindings && prevFindings.length > 0) {
+        scanDelta = computeScanDelta(findings, prevFindings as Finding[]);
+      }
+    }
+  }
+
+  // Compute SLA overdue stats
+  const overdueStats = findings.length > 0
+    ? countOverdue(
+        findings.map((f) => ({
+          severity: f.severity as FindingSeverity,
+          created_at: f.created_at,
+          status: findingStatuses[f.id]?.status || 'open',
+        }))
+      )
+    : { overdue: 0, expiringSoon: 0 };
+
+  // Fetch benchmark data (client's sector ranking)
+  let benchmarkData: { available: boolean; percentile?: number; sector_avg?: number; user_score?: number; sector_count?: number; sector?: string } | null = null;
+  try {
+    const benchRes = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || ''}/api/benchmark`, {
+      headers: { cookie: (await import('next/headers')).cookies().toString() },
+      cache: 'no-store',
+    });
+    if (benchRes.ok) {
+      benchmarkData = await benchRes.json();
+    }
+  } catch { /* silent — benchmark is optional */ }
 
   const statusLabels: Record<string, string> = {
     queued: 'Laukiama eilėje',
@@ -246,6 +311,122 @@ export default async function DashboardPage() {
       {/* Risk trend chart */}
       <RiskTrendChart points={trendPoints} />
 
+      {/* Overdue + Benchmark row */}
+      {(overdueStats.overdue > 0 || overdueStats.expiringSoon > 0 || (benchmarkData?.available)) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Overdue findings widget */}
+          {(overdueStats.overdue > 0 || overdueStats.expiringSoon > 0) && (
+            <div className="bg-white rounded-lg shadow-md p-6">
+              <h2 className="text-sm font-medium text-gray-500 mb-4">SLA būsena</h2>
+              <div className="space-y-3">
+                {overdueStats.overdue > 0 && (
+                  <div className="flex items-center gap-3 p-3 bg-red-50 rounded-lg">
+                    <span className="text-2xl font-bold text-red-600">{overdueStats.overdue}</span>
+                    <div>
+                      <p className="text-sm font-medium text-red-800">Vėluojantys trūkumai</p>
+                      <p className="text-xs text-red-600">SLA terminas praėjęs — būtina skubiai reaguoti</p>
+                    </div>
+                  </div>
+                )}
+                {overdueStats.expiringSoon > 0 && (
+                  <div className="flex items-center gap-3 p-3 bg-yellow-50 rounded-lg">
+                    <span className="text-2xl font-bold text-yellow-600">{overdueStats.expiringSoon}</span>
+                    <div>
+                      <p className="text-sm font-medium text-yellow-800">Artėjantys terminai</p>
+                      <p className="text-xs text-yellow-600">SLA terminas baigiasi per 3 dienas</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Benchmark widget */}
+          {benchmarkData?.available && (
+            <div className="bg-white rounded-lg shadow-md p-6">
+              <h2 className="text-sm font-medium text-gray-500 mb-4">Sektoriaus palyginimas</h2>
+              <div className="text-center">
+                <p className="text-4xl font-bold text-blue-600">{benchmarkData.percentile}%</p>
+                <p className="text-sm text-gray-600 mt-2">
+                  Jūsų organizacija geriau nei <strong>{benchmarkData.percentile}%</strong> sektoriaus organizacijų
+                </p>
+                <div className="mt-4 flex items-center justify-center gap-6 text-sm">
+                  <div>
+                    <p className="text-gray-500">Jūsų balas</p>
+                    <p className="text-lg font-semibold text-gray-900">{benchmarkData.user_score}</p>
+                  </div>
+                  <div className="h-8 w-px bg-gray-200" />
+                  <div>
+                    <p className="text-gray-500">Sektoriaus vidurkis</p>
+                    <p className="text-lg font-semibold text-gray-900">{benchmarkData.sector_avg}</p>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-400 mt-3">
+                  Palyginimas su {benchmarkData.sector_count} organizacijomis sektoriuje
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Scan delta — comparison with previous scan */}
+      {scanDelta && (
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-sm font-medium text-gray-500 mb-4">Palyginimas su praėjusiu skaitymu</h2>
+          <div className="grid grid-cols-3 gap-4 text-center">
+            <div className="p-4 bg-red-50 rounded-lg">
+              <p className="text-2xl font-bold text-red-600">{scanDelta.newCount}</p>
+              <p className="text-sm text-red-700 mt-1">Nauji trūkumai</p>
+            </div>
+            <div className="p-4 bg-green-50 rounded-lg">
+              <p className="text-2xl font-bold text-green-600">{scanDelta.resolvedCount}</p>
+              <p className="text-sm text-green-700 mt-1">Išspręsti</p>
+            </div>
+            <div className="p-4 bg-gray-50 rounded-lg">
+              <p className="text-2xl font-bold text-gray-600">{scanDelta.persistentCount}</p>
+              <p className="text-sm text-gray-600 mt-1">Išlikę</p>
+            </div>
+          </div>
+          {scanDelta.newCount > 0 && (
+            <div className="mt-4 border-t border-gray-100 pt-4">
+              <h3 className="text-xs font-semibold text-red-700 uppercase tracking-wide mb-2">Nauji trūkumai nuo praėjusio skenavimo</h3>
+              <ul className="space-y-1">
+                {scanDelta.newFindings.slice(0, 5).map((f) => (
+                  <li key={f.id} className="flex items-center gap-2 text-sm">
+                    <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${
+                      f.severity === 'critical' ? 'bg-red-600' :
+                      f.severity === 'high' ? 'bg-orange-600' :
+                      f.severity === 'medium' ? 'bg-yellow-600' : 'bg-blue-600'
+                    }`} />
+                    <span className="text-gray-700 truncate">{f.title_lt}</span>
+                  </li>
+                ))}
+                {scanDelta.newCount > 5 && (
+                  <li className="text-xs text-gray-500">ir dar {scanDelta.newCount - 5}...</li>
+                )}
+              </ul>
+            </div>
+          )}
+          {scanDelta.resolvedCount > 0 && (
+            <div className="mt-4 border-t border-gray-100 pt-4">
+              <h3 className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-2">Išspręsti nuo praėjusio skenavimo</h3>
+              <ul className="space-y-1">
+                {scanDelta.resolvedFindings.slice(0, 5).map((f) => (
+                  <li key={f.id} className="flex items-center gap-2 text-sm">
+                    <span className="inline-block w-2 h-2 rounded-full flex-shrink-0 bg-green-500" />
+                    <span className="text-gray-500 line-through truncate">{f.title_lt}</span>
+                  </li>
+                ))}
+                {scanDelta.resolvedCount > 5 && (
+                  <li className="text-xs text-gray-500">ir dar {scanDelta.resolvedCount - 5}...</li>
+                )}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Plan upsell card — shown only to basic plan users */}
       {((org as Record<string, unknown>).plan || 'basic') !== 'professional' && profile.role === 'admin' && (
         <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-lg shadow-md p-6 text-white">
@@ -284,7 +465,12 @@ export default async function DashboardPage() {
           <h2 className="text-lg font-bold text-gray-900 mb-4">
             Skenavimo rezultatai — {formatLithuanianDate(latestScan.created_at)}
           </h2>
-          <FindingsList findings={findings} />
+          <FindingsList
+            findings={findings}
+            findingStatuses={findingStatuses}
+            isAdmin={profile.role === 'admin'}
+            scanId={latestScan.id}
+          />
         </div>
       )}
 

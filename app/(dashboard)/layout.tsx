@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { LogoutButton } from '@/components/logout-button';
 import { NavLink } from '@/components/nav-link';
 import { MobileMenu } from '@/components/mobile-menu';
+import { NotificationBell } from '@/components/notification-bell';
 
 export default async function DashboardLayout({
   children,
@@ -44,6 +45,7 @@ export default async function DashboardLayout({
 
   const navItems = [
     { href: '/dashboard', label: 'Valdymo skydelis' },
+    { href: '/compliance', label: 'Atitiktis' },
     { href: '/scans', label: 'Skenavimai' },
     { href: '/reports', label: 'Ataskaitos' },
     { href: '/settings', label: 'Nustatymai' },
@@ -72,6 +74,7 @@ export default async function DashboardLayout({
               </div>
             </div>
             <div className="hidden md:flex items-center space-x-4">
+              <NotificationBell />
               <span className="text-sm text-gray-500">{user.email}</span>
               {profile?.role && (
                 <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
