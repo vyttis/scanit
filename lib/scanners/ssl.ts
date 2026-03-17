@@ -1,4 +1,4 @@
-import type { ScannerResult, ScannerFinding } from './types';
+import type { ScannerResult, ScannerFinding, ScannerOptions } from './types';
 import { fetchWithTimeout } from './types';
 import { formatLithuanianDate } from '@/lib/utils/date';
 
@@ -21,7 +21,7 @@ function sleep(ms: number) {
  * Severity: Critical if F/T grade or vuln, High if C/below or TLS1.0, Medium if B, Low if no HSTS
  * KSĮ: Art. 11(2)(e) — tinklų saugumas
  */
-export async function scanSsl(domain: string): Promise<ScannerResult> {
+export async function scanSsl(domain: string, options?: ScannerOptions): Promise<ScannerResult> {
   try {
     const host = encodeURIComponent(domain);
     const startUrl = `https://api.ssllabs.com/api/v3/analyze?host=${host}&all=done&startNew=on&ignoreMismatch=on`;
@@ -512,6 +512,116 @@ export async function scanSsl(domain: string): Promise<ScannerResult> {
           nis2_article: '11 str. 2 d. 5 p.',
           evidence: { domain, key_alg: cert.keyAlg, key_size: cert.keySize },
         });
+      }
+    }
+
+    // ── Subdomain TLS checks (cached only, professional plan) ────────
+    if (options?.subdomains && options.subdomains.length > 0) {
+      const subsToCheck = options.subdomains.slice(0, 5);
+      console.log(`[ssl] Checking ${subsToCheck.length} subdomains (cached only)`);
+
+      const subResults = await Promise.allSettled(
+        subsToCheck.map(async (sub) => {
+          const subHost = encodeURIComponent(sub);
+          const cacheUrl = `https://api.ssllabs.com/api/v3/analyze?host=${subHost}&all=done&fromCache=on&ignoreMismatch=on`;
+          const res = await fetchWithTimeout(cacheUrl, {}, 10_000);
+          if (!res.ok) return { sub, data: null, status: res.status };
+          return { sub, data: await res.json() as Record<string, unknown>, status: res.status };
+        }),
+      );
+
+      for (const result of subResults) {
+        if (result.status !== 'fulfilled') continue;
+        const { sub, data: subData } = result.value;
+
+        if (!subData || subData.status === 'ERROR') {
+          findings.push({
+            module: 'ssl', severity: 'high',
+            title_lt: `${sub} — SSL/TLS sertifikatas nerastas arba nepasiekiamas`,
+            description_lt: `Subdomenas ${sub} neturi galiojančio SSL/TLS sertifikato arba serveris nepasiekiamas per HTTPS.`,
+            recommendation_lt: 'Įdiekite SSL/TLS sertifikatą arba pašalinkite subdomeną, jei jis nebenaudojamas.',
+            nis2_article: '11 str. 2 d. 5 p.',
+            evidence: { subdomain: sub, domain, status: subData?.status || 'ERROR' },
+          });
+          continue;
+        }
+
+        if (subData.status !== 'READY') {
+          findings.push({
+            module: 'ssl', severity: 'info',
+            title_lt: `${sub} — SSL Labs talpykloje rezultatų nerasta`,
+            description_lt: `Subdomeno ${sub} SSL/TLS analizė nebuvo rasta SSL Labs talpykloje. Subdomenas bus patikrintas kitame skenavime.`,
+            recommendation_lt: 'Informacinis įrašas.',
+            nis2_article: null,
+            evidence: { subdomain: sub, domain, status: subData.status },
+          });
+          continue;
+        }
+
+        // Process cached subdomain endpoints
+        const subEndpoints = (subData.endpoints || []) as Array<Record<string, unknown>>;
+        for (const ep of subEndpoints) {
+          if (ep.statusMessage !== 'Ready') continue;
+          const grade = (ep.grade as string) || 'Unknown';
+          const ip = (ep.ipAddress as string) || '';
+
+          if (grade === 'F' || grade === 'T' || grade === 'M') {
+            findings.push({
+              module: 'ssl', severity: 'critical',
+              title_lt: `${sub} — SSL/TLS vertinimas: ${grade}`,
+              description_lt: `Subdomeno ${sub} (IP: ${ip}) SSL/TLS vertinimas yra „${grade}". Tai rodo kritines konfigūracijos problemas.`,
+              recommendation_lt: 'SKUBIAI patikrinkite ir atnaujinkite SSL/TLS sertifikatą šiam subdomenui.',
+              nis2_article: '11 str. 2 d. 5 p.',
+              evidence: { subdomain: sub, domain, ip, grade },
+            });
+          } else if (grade === 'C' || grade === 'D' || grade === 'E') {
+            findings.push({
+              module: 'ssl', severity: 'high',
+              title_lt: `${sub} — SSL/TLS vertinimas: ${grade}`,
+              description_lt: `Subdomeno ${sub} (IP: ${ip}) SSL/TLS konfigūracija turi saugumo trūkumų (vertinimas: ${grade}).`,
+              recommendation_lt: 'Atnaujinkite SSL/TLS konfigūraciją šiam subdomenui.',
+              nis2_article: '11 str. 2 d. 5 p.',
+              evidence: { subdomain: sub, domain, ip, grade },
+            });
+          } else if (grade === 'B') {
+            findings.push({
+              module: 'ssl', severity: 'medium',
+              title_lt: `${sub} — SSL/TLS vertinimas: B`,
+              description_lt: `Subdomeno ${sub} SSL/TLS konfigūracija priimtina, bet galima pagerinti.`,
+              recommendation_lt: 'Apsvarstykite TLS 1.1 išjungimą ir HSTS antraštės pridėjimą.',
+              nis2_article: '11 str. 2 d. 5 p.',
+              evidence: { subdomain: sub, domain, ip, grade },
+            });
+          }
+        }
+
+        // Check subdomain cert expiry
+        const subCerts = (subData.certs || []) as Array<{ notAfter?: number; subject?: string }>;
+        for (const cert of subCerts) {
+          if (!cert.notAfter) continue;
+          const expiryDate = new Date(cert.notAfter);
+          const daysUntilExpiry = Math.ceil((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+
+          if (daysUntilExpiry < 0) {
+            findings.push({
+              module: 'ssl', severity: 'critical',
+              title_lt: `${sub} — SSL/TLS sertifikatas pasibaigęs`,
+              description_lt: `Subdomeno ${sub} SSL/TLS sertifikatas pasibaigė prieš ${Math.abs(daysUntilExpiry)} dienų.`,
+              recommendation_lt: 'SKUBIAI atnaujinkite sertifikatą.',
+              nis2_article: '11 str. 2 d. 5 p.',
+              evidence: { subdomain: sub, domain, expiry_date: expiryDate.toISOString(), days_until_expiry: daysUntilExpiry },
+            });
+          } else if (daysUntilExpiry <= 30) {
+            findings.push({
+              module: 'ssl', severity: 'high',
+              title_lt: `${sub} — sertifikatas baigiasi po ${daysUntilExpiry} dienų`,
+              description_lt: `Subdomeno ${sub} SSL/TLS sertifikatas baigsis po ${daysUntilExpiry} dienų.`,
+              recommendation_lt: 'Nedelsiant pradėkite sertifikato atnaujinimo procesą.',
+              nis2_article: '11 str. 2 d. 5 p.',
+              evidence: { subdomain: sub, domain, expiry_date: expiryDate.toISOString(), days_until_expiry: daysUntilExpiry },
+            });
+          }
+        }
       }
     }
 

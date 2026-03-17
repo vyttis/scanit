@@ -1,5 +1,6 @@
-import type { ScannerResult, ScannerFinding } from './types';
-import { fetchWithTimeout } from './types';
+import type { ScannerResult, ScannerFinding, ScannerOptions } from './types';
+import { fetchWithTimeout, expandCidrToIps } from './types';
+import { resolve } from 'dns/promises';
 
 /**
  * Shodan scanner — full-depth host intelligence.
@@ -12,7 +13,7 @@ import { fetchWithTimeout } from './types';
  * Severity: Critical if CVSS ≥9.0, High if ≥7.0 or sensitive port, Medium if ≥4.0
  * KSĮ: Art. 11(2)(e) — tinklų saugumas
  */
-export async function scanShodan(domain: string): Promise<ScannerResult> {
+export async function scanShodan(domain: string, options?: ScannerOptions): Promise<ScannerResult> {
   const apiKey = process.env.SHODAN_API_KEY?.trim();
   if (!apiKey) {
     return { module: 'shodan', success: false, findings: [], error: 'SHODAN_API_KEY not configured' };
@@ -83,6 +84,36 @@ export async function scanShodan(domain: string): Promise<ScannerResult> {
       // Non-critical — continue with primary IP
     }
 
+    // ── Step 3b: Merge user-provided IP ranges and subdomains ────────
+    if (options?.ipRanges && options.ipRanges.length > 0) {
+      const extraIps = expandCidrToIps(options.ipRanges, 20);
+      for (const ip of extraIps) associatedIps.add(ip);
+      console.log(`[shodan] Added ${extraIps.length} IPs from user-provided CIDR ranges`);
+    }
+
+    if (options?.subdomains && options.subdomains.length > 0) {
+      const subsToResolve = options.subdomains.slice(0, 10);
+      const subDnsResults = await Promise.allSettled(
+        subsToResolve.map(async (sub) => {
+          try {
+            const ips = await resolve(sub, 'A');
+            return ips;
+          } catch {
+            return [];
+          }
+        }),
+      );
+      for (const result of subDnsResults) {
+        if (result.status === 'fulfilled') {
+          for (const ip of result.value) associatedIps.add(ip);
+        }
+      }
+      console.log(`[shodan] Resolved ${subsToResolve.length} subdomains, total IPs: ${associatedIps.size}`);
+    }
+
+    const hasExtraInputs = (options?.ipRanges && options.ipRanges.length > 0) ||
+      (options?.subdomains && options.subdomains.length > 0);
+
     if (associatedIps.size > 1) {
       findings.push({
         module: 'shodan',
@@ -101,55 +132,52 @@ export async function scanShodan(domain: string): Promise<ScannerResult> {
     const allVulnIps: string[] = [];
     let osDetection: string | null = null;
 
-    const ipsToCheck = Array.from(associatedIps).slice(0, 5); // Max 5 IPs to stay within timeout
+    const maxIpsToCheck = hasExtraInputs ? 20 : 5;
+    const ipsToCheck = Array.from(associatedIps).slice(0, maxIpsToCheck);
 
-    for (const ip of ipsToCheck) {
-      console.log(`[shodan] Host lookup: ${ip}`);
-      let hostRes: Response;
-      try {
-        hostRes = await fetchWithTimeout(
-          `https://api.shodan.io/shodan/host/${ip}?key=${apiKey}`,
-          {},
-          15_000,
-        );
-      } catch {
-        continue;
-      }
+    // Run host lookups in parallel batches of 5
+    const BATCH_SIZE = 5;
+    for (let batchStart = 0; batchStart < ipsToCheck.length; batchStart += BATCH_SIZE) {
+      const batch = ipsToCheck.slice(batchStart, batchStart + BATCH_SIZE);
+      const batchResults = await Promise.allSettled(
+        batch.map(async (ip) => {
+          console.log(`[shodan] Host lookup: ${ip}`);
+          const hostRes = await fetchWithTimeout(
+            `https://api.shodan.io/shodan/host/${ip}?key=${apiKey}`,
+            {},
+            15_000,
+          );
+          console.log(`[shodan] Host response for ${ip}: ${hostRes.status}`);
+          if (hostRes.status === 404) return null;
+          if (!hostRes.ok) { await hostRes.text().catch(() => ''); return null; }
+          return { ip, data: await hostRes.json() };
+        }),
+      );
 
-      console.log(`[shodan] Host response for ${ip}: ${hostRes.status}`);
+      for (const result of batchResults) {
+        if (result.status !== 'fulfilled' || !result.value) continue;
+        const { ip, data: hostData } = result.value;
 
-      if (hostRes.status === 404) continue;
-      if (!hostRes.ok) {
-        await hostRes.text().catch(() => '');
-        continue;
-      }
+        if (!osDetection && hostData.os) osDetection = hostData.os;
 
-      const hostData = await hostRes.json();
+        const services = hostData.data || [];
+        for (const svc of services) {
+          allPorts.push({
+            ip,
+            port: svc.port || 0,
+            service: svc._shodan?.module || svc.transport || '',
+            product: svc.product || '',
+            version: svc.version || '',
+            banner: (svc.data || '').slice(0, 200),
+          });
+        }
 
-      // OS detection
-      if (!osDetection && hostData.os) {
-        osDetection = hostData.os;
-      }
-
-      // Collect service banners from all ports
-      const services = hostData.data || [];
-      for (const svc of services) {
-        allPorts.push({
-          ip,
-          port: svc.port || 0,
-          service: svc._shodan?.module || svc.transport || '',
-          product: svc.product || '',
-          version: svc.version || '',
-          banner: (svc.data || '').slice(0, 200),
-        });
-      }
-
-      // Collect CVEs
-      if (hostData.vulns && hostData.vulns.length > 0) {
-        allVulnIps.push(ip);
-        for (const cveId of hostData.vulns) {
-          if (!allCves.find((c) => c.id === cveId)) {
-            allCves.push({ id: cveId, cvss: null, summary: '', exploited: false });
+        if (hostData.vulns && hostData.vulns.length > 0) {
+          allVulnIps.push(ip);
+          for (const cveId of hostData.vulns) {
+            if (!allCves.find((c) => c.id === cveId)) {
+              allCves.push({ id: cveId, cvss: null, summary: '', exploited: false });
+            }
           }
         }
       }

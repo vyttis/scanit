@@ -1,4 +1,4 @@
-import type { ScannerResult, ScannerFinding } from './types';
+import type { ScannerResult, ScannerFinding, ScannerOptions } from './types';
 import { fetchWithTimeout } from './types';
 
 function sleep(ms: number) {
@@ -16,7 +16,16 @@ function sleep(ms: number) {
  * Severity: Critical if passwords exposed, High if PII exposed, Medium if emails only
  * KSĮ: Art. 11(2)(i) — prieigos valdymas ir MFA
  */
-export async function scanHibp(domain: string): Promise<ScannerResult> {
+/**
+ * Mask an email address for privacy: john@example.com → j***@example.com
+ */
+function maskEmail(email: string): string {
+  const [local, domain] = email.split('@');
+  if (!local || !domain) return '***@***';
+  return `${local[0]}***@${domain}`;
+}
+
+export async function scanHibp(domain: string, options?: ScannerOptions): Promise<ScannerResult> {
   const apiKey = process.env.HIBP_API_KEY?.trim();
   if (!apiKey) {
     return { module: 'hibp', success: false, findings: [], error: 'HIBP_API_KEY not configured' };
@@ -310,6 +319,133 @@ export async function scanHibp(domain: string): Promise<ScannerResult> {
           breach_names: Array.from(breachNames),
         },
       });
+    }
+
+    // ── Step 3: Per-email breach check (professional plan) ───────────
+    if (options?.emails && options.emails.length > 0) {
+      const emailsToCheck = options.emails.slice(0, 20);
+      console.log(`[hibp] Checking ${emailsToCheck.length} individual emails`);
+
+      const emailPasswordBreaches: string[] = [];
+      const emailPiiBreaches: string[] = [];
+      const emailOnlyBreachEmails: string[] = [];
+
+      for (const email of emailsToCheck) {
+        try {
+          const emailRes = await fetchWithTimeout(
+            `https://haveibeenpwned.com/api/v3/breachedaccount/${encodeURIComponent(email)}?truncateResponse=false`,
+            { headers },
+            10_000,
+          );
+
+          if (emailRes.status === 404) {
+            // No breaches for this email
+            await sleep(1600);
+            continue;
+          }
+
+          if (!emailRes.ok) {
+            await emailRes.text().catch(() => '');
+            await sleep(1600);
+            continue;
+          }
+
+          const emailBreaches = await emailRes.json() as Array<{
+            Name: string; Title: string; BreachDate: string;
+            DataClasses: string[]; PwnCount: number;
+          }>;
+
+          const masked = maskEmail(email);
+          const hasPassword = emailBreaches.some((b) =>
+            b.DataClasses.some((dc) => dc.toLowerCase().includes('password')),
+          );
+          const hasPii = emailBreaches.some((b) =>
+            b.DataClasses.some((dc) => {
+              const lower = dc.toLowerCase();
+              return lower.includes('phone') || lower.includes('address') ||
+                lower.includes('date of birth') || lower.includes('credit');
+            }),
+          );
+
+          if (hasPassword) {
+            emailPasswordBreaches.push(masked);
+          } else if (hasPii) {
+            emailPiiBreaches.push(masked);
+          } else {
+            emailOnlyBreachEmails.push(masked);
+          }
+
+          // HIBP rate limit: 1 request per 1.5s
+          await sleep(1600);
+        } catch {
+          await sleep(1600);
+          continue;
+        }
+      }
+
+      // Generate aggregated findings per severity tier
+      if (emailPasswordBreaches.length > 0) {
+        findings.push({
+          module: 'hibp',
+          severity: 'critical',
+          title_lt: `Individualūs el. paštai su nutekėjusiais slaptažodžiais — ${emailPasswordBreaches.length} paskyros`,
+          description_lt:
+            `Šie el. pašto adresai rasti duomenų nutekėjimuose, kuriuose buvo atskleisti slaptažodžiai:\n` +
+            emailPasswordBreaches.map((e) => `• ${e}`).join('\n') + '\n\n' +
+            `Piktavaliai gali bandyti prisijungti prie jūsų sistemų naudodami nutekėjusius slaptažodžius.`,
+          recommendation_lt:
+            `1. SKUBIAI: priverskite šiuos vartotojus pakeisti slaptažodžius.\n` +
+            `2. Įjunkite kelių veiksnių autentifikavimą (MFA).\n` +
+            `3. Patikrinkite prisijungimų žurnalus.`,
+          nis2_article: '11 str. 2 d. 9 p.',
+          evidence: {
+            domain,
+            email_count: emailPasswordBreaches.length,
+            masked_emails: emailPasswordBreaches,
+            breach_type: 'password',
+          },
+        });
+      }
+
+      if (emailPiiBreaches.length > 0) {
+        findings.push({
+          module: 'hibp',
+          severity: 'high',
+          title_lt: `Individualūs el. paštai su nutekėjusiais asmens duomenimis — ${emailPiiBreaches.length} paskyros`,
+          description_lt:
+            `Šie el. pašto adresai rasti nutekėjimuose su asmens duomenimis (telefono nr., adresai, gimimo datos):\n` +
+            emailPiiBreaches.map((e) => `• ${e}`).join('\n'),
+          recommendation_lt:
+            `1. Informuokite paveiktus darbuotojus.\n` +
+            `2. Perspėkite apie galimas tikslines sukčiavimo atakas.`,
+          nis2_article: '11 str. 2 d. 9 p.',
+          evidence: {
+            domain,
+            email_count: emailPiiBreaches.length,
+            masked_emails: emailPiiBreaches,
+            breach_type: 'pii',
+          },
+        });
+      }
+
+      if (emailOnlyBreachEmails.length > 0) {
+        findings.push({
+          module: 'hibp',
+          severity: 'medium',
+          title_lt: `Individualūs el. paštai rasti nutekėjimuose — ${emailOnlyBreachEmails.length} paskyros`,
+          description_lt:
+            `Šie el. pašto adresai rasti duomenų nutekėjimuose (be slaptažodžių):\n` +
+            emailOnlyBreachEmails.map((e) => `• ${e}`).join('\n'),
+          recommendation_lt: 'Informuokite darbuotojus apie galimą padidėjusį spam kiekį.',
+          nis2_article: '11 str. 2 d. 9 p.',
+          evidence: {
+            domain,
+            email_count: emailOnlyBreachEmails.length,
+            masked_emails: emailOnlyBreachEmails,
+            breach_type: 'email_only',
+          },
+        });
+      }
     }
 
     return { module: 'hibp', success: true, findings };

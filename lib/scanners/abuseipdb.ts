@@ -1,5 +1,5 @@
-import type { ScannerResult, ScannerFinding } from './types';
-import { fetchWithTimeout } from './types';
+import type { ScannerResult, ScannerFinding, ScannerOptions } from './types';
+import { fetchWithTimeout, expandCidrToIps, deduplicateIps } from './types';
 import { resolve } from 'dns/promises';
 
 /**
@@ -10,7 +10,7 @@ import { resolve } from 'dns/promises';
  * Severity: Critical if score ≥75, High if ≥50 or 10+ reports, Medium if ≥25, Low if any
  * KSĮ: Art. 11(2)(e) — tinklų saugumas
  */
-export async function scanAbuseipdb(domain: string): Promise<ScannerResult> {
+export async function scanAbuseipdb(domain: string, options?: ScannerOptions): Promise<ScannerResult> {
   const apiKey = process.env.ABUSEIPDB_API_KEY?.trim();
   if (!apiKey) {
     return { module: 'abuseipdb', success: false, findings: [], error: 'ABUSEIPDB_API_KEY not configured' };
@@ -50,11 +50,18 @@ export async function scanAbuseipdb(domain: string): Promise<ScannerResult> {
 
     const findings: ScannerFinding[] = [];
 
+    // Merge user-provided IP ranges with DNS-resolved IPs
+    const extraIps = options?.ipRanges ? expandCidrToIps(options.ipRanges, 15) : [];
+    const allIps = deduplicateIps([...ips, ...extraIps]);
+    const hasExtraInputs = extraIps.length > 0;
+    const maxIps = hasExtraInputs ? 20 : 5;
+
     interface IpCheckResult {
       ip: string; confidenceScore: number; totalReports: number;
       lastReportedAt: string | null; countryCode: string;
       usageType: string; isp: string; numDistinctUsers: number;
       abuseCategories: number[];
+      source: 'dns_resolved' | 'user_provided';
     }
 
     const categoryNames: Record<number, string> = {
@@ -67,20 +74,23 @@ export async function scanAbuseipdb(domain: string): Promise<ScannerResult> {
     };
 
     const ipResults: IpCheckResult[] = [];
+    const ipsToCheck = allIps.slice(0, maxIps);
+    const dnsIpSet = new Set(ips);
 
-    for (const ip of ips.slice(0, 5)) {
-      try {
+    // Run IP checks in parallel (AbuseIPDB has no per-second rate limit)
+    const checkResults = await Promise.allSettled(
+      ipsToCheck.map(async (ip) => {
         const url = `https://api.abuseipdb.com/api/v2/check?ipAddress=${encodeURIComponent(ip)}&maxAgeInDays=90&verbose`;
         console.log(`[abuseipdb] Checking IP: ${ip}`);
         const res = await fetchWithTimeout(url, { headers }, 15_000);
         console.log(`[abuseipdb] Response for ${ip}: ${res.status}`);
 
-        if (!res.ok) { await res.text().catch(() => ''); continue; }
+        if (!res.ok) { await res.text().catch(() => ''); return null; }
 
         const responseData = await res.json();
         const d = responseData.data;
 
-        ipResults.push({
+        return {
           ip,
           confidenceScore: d.abuseConfidenceScore || 0,
           totalReports: d.totalReports || 0,
@@ -90,8 +100,15 @@ export async function scanAbuseipdb(domain: string): Promise<ScannerResult> {
           isp: d.isp || '',
           numDistinctUsers: d.numDistinctUsers || 0,
           abuseCategories: (d.reports || []).flatMap((r: { categories: number[] }) => r.categories || []),
-        });
-      } catch { continue; }
+          source: (dnsIpSet.has(ip) ? 'dns_resolved' : 'user_provided') as 'dns_resolved' | 'user_provided',
+        };
+      }),
+    );
+
+    for (const result of checkResults) {
+      if (result.status === 'fulfilled' && result.value) {
+        ipResults.push(result.value);
+      }
     }
 
     if (ipResults.length === 0) {
@@ -131,6 +148,7 @@ export async function scanAbuseipdb(domain: string): Promise<ScannerResult> {
             domain, ip: result.ip, abuse_confidence: score, total_reports: reports,
             distinct_users: result.numDistinctUsers, isp: result.isp, country: result.countryCode,
             usage_type: result.usageType, last_reported: result.lastReportedAt, top_categories: topCategories,
+            ip_source: result.source,
           },
         });
       } else if (score >= 50 || reports >= 10) {

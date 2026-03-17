@@ -1,4 +1,4 @@
-import type { ScannerResult, ScannerFinding } from './types';
+import type { ScannerResult, ScannerFinding, ScannerOptions } from './types';
 import { fetchWithTimeout } from './types';
 import { resolve } from 'dns/promises';
 
@@ -13,7 +13,7 @@ import { resolve } from 'dns/promises';
  * Severity: Critical if domain expiring, High if dangling subdomain, Medium if suspicious history
  * KSĮ: Art. 11(2)(a) — rizikų valdymas
  */
-export async function scanSecuritytrails(domain: string): Promise<ScannerResult> {
+export async function scanSecuritytrails(domain: string, options?: ScannerOptions): Promise<ScannerResult> {
   const apiKey = process.env.SECURITYTRAILS_API_KEY?.trim();
   if (!apiKey) {
     return { module: 'securitytrails', success: false, findings: [], error: 'SECURITYTRAILS_API_KEY not configured' };
@@ -65,7 +65,20 @@ export async function scanSecuritytrails(domain: string): Promise<ScannerResult>
       (sub: string) => `${sub}.${domain}`,
     );
 
+    // Merge user-provided subdomains (professional plan)
+    const userProvidedSubdomains = new Set<string>();
+    if (options?.subdomains && options.subdomains.length > 0) {
+      for (const sub of options.subdomains.slice(0, 10)) {
+        userProvidedSubdomains.add(sub);
+        if (!subdomains.includes(sub)) {
+          subdomains.unshift(sub); // Prioritize user-provided subdomains
+        }
+      }
+      console.log(`[securitytrails] Merged ${userProvidedSubdomains.size} user-provided subdomains, total: ${subdomains.length}`);
+    }
+
     // Check for dangling subdomains (DNS A check on sample — max 25)
+    // Prioritize user-provided subdomains (they come first in the array)
     const danglingSubdomains: string[] = [];
     const sampleSubdomains = subdomains.slice(0, 25);
 
@@ -111,6 +124,52 @@ export async function scanSecuritytrails(domain: string): Promise<ScannerResult>
         nis2_article: '11 str. 2 d. 1 p.',
         evidence: { domain, dangling_subdomains: danglingSubdomains, checked_count: sampleSubdomains.length, total_subdomains: subdomains.length },
       });
+    }
+
+    // Cross-reference: user-provided subdomains not found by API
+    if (userProvidedSubdomains.size > 0) {
+      const apiSubdomainSet = new Set(
+        (subdomainsData.subdomains || []).map((sub: string) => `${sub}.${domain}`),
+      );
+      const unknownToApi: string[] = [];
+      const danglingUserSubs: string[] = [];
+
+      for (const sub of Array.from(userProvidedSubdomains)) {
+        if (!apiSubdomainSet.has(sub)) {
+          unknownToApi.push(sub);
+          if (danglingSubdomains.includes(sub)) {
+            danglingUserSubs.push(sub);
+          }
+        }
+      }
+
+      if (danglingUserSubs.length > 0) {
+        findings.push({
+          module: 'securitytrails',
+          severity: 'high',
+          title_lt: `Kliento nurodyti subdomenai nerasti API ir neveda į serverį — ${danglingUserSubs.length} vnt.`,
+          description_lt:
+            `Šie subdomenai buvo nurodyti kaip jūsų infrastruktūros dalis, bet jie nerandami viešuose šaltiniuose ir neveda į veikiantį serverį:\n` +
+            danglingUserSubs.map((s) => `• ${s}`).join('\n') + '\n\n' +
+            `Tai gali rodyti pamirštas konfigūracijas arba subdomain takeover riziką.`,
+          recommendation_lt: 'Pašalinkite šių subdomenų DNS įrašus arba atkurkite serverius.',
+          nis2_article: '11 str. 2 d. 1 p.',
+          evidence: { domain, dangling_user_subdomains: danglingUserSubs },
+        });
+      } else if (unknownToApi.length > 0) {
+        findings.push({
+          module: 'securitytrails',
+          severity: 'info',
+          title_lt: `${unknownToApi.length} kliento subdomenų nerasti viešuose šaltiniuose`,
+          description_lt:
+            `Šie subdomenai nurodyti jūsų organizacijos, bet nerasti SecurityTrails duomenų bazėje:\n` +
+            unknownToApi.map((s) => `• ${s}`).join('\n') + '\n\n' +
+            `Tai gali reikšti, kad jie yra nauji, vidiniai arba apsaugoti nuo viešo matavimo.`,
+          recommendation_lt: 'Informacinis įrašas — patikrinkite, ar šie subdomenai tinkamai apsaugoti.',
+          nis2_article: null,
+          evidence: { domain, unknown_subdomains: unknownToApi },
+        });
+      }
     }
 
     // Attack surface: total subdomain count

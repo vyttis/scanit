@@ -11,8 +11,10 @@ import type { ScannerFunction, ScannerResult, ScannerOptions } from './types';
 export type { ScannerResult, ScannerFinding, ScannerOptions } from './types';
 
 /** Max time (ms) any single scanner is allowed to run.
- * SSL Labs needs up to 90s (5 polls × 10s + 30s retry for 529). */
-const SCANNER_TIMEOUT_MS = 100_000;
+ * Light scan: 100s (SSL Labs needs up to 90s).
+ * Deep scan: 150s (extra headroom for IP/subdomain/email checks). */
+const SCANNER_TIMEOUT_LIGHT_MS = 100_000;
+const SCANNER_TIMEOUT_DEEP_MS = 150_000;
 
 /**
  * All scanner modules, keyed by module name.
@@ -38,6 +40,9 @@ function withTimeout(
   domain: string,
   options?: ScannerOptions,
 ): Promise<ScannerResult> {
+  const hasExtraInputs = !!(options?.ipRanges?.length || options?.subdomains?.length || options?.emails?.length);
+  const timeoutMs = hasExtraInputs ? SCANNER_TIMEOUT_DEEP_MS : SCANNER_TIMEOUT_LIGHT_MS;
+
   return Promise.race([
     scanner(domain, options),
     new Promise<ScannerResult>((resolve) =>
@@ -47,9 +52,9 @@ function withTimeout(
             module: moduleName as ScannerResult['module'],
             success: false,
             findings: [],
-            error: `Scanner timed out after ${SCANNER_TIMEOUT_MS / 1000}s`,
+            error: `Scanner timed out after ${timeoutMs / 1000}s`,
           }),
-        SCANNER_TIMEOUT_MS,
+        timeoutMs,
       ),
     ),
   ]);

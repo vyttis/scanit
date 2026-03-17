@@ -182,12 +182,16 @@ export async function POST(request: Request) {
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
     request.headers.get('x-real-ip') || 'unknown';
 
+  // Determine scan type based on inputs
+  const hasExtraInputs = requestedIpRanges.length > 0 || requestedSubdomains.length > 0 || requestedEmails.length > 0;
+  const scanType = hasExtraInputs ? 'deep' : 'light';
+
   // Create scan record
   const { data: scan, error: scanError } = await serviceClient
     .from('scans')
     .insert({
       org_id: org.id,
-      scan_type: 'light',
+      scan_type: scanType,
       status: 'queued',
       triggered_by: user.id,
     })
@@ -206,9 +210,14 @@ export async function POST(request: Request) {
     details: {
       scan_id: scan.id,
       domain: org.domain,
-      scan_type: 'light',
+      scan_type: scanType,
       is_superadmin_scan: isSuperadmin,
       target_org_id: targetOrgId,
+      scope: {
+        ip_range_count: requestedIpRanges.length,
+        subdomain_count: requestedSubdomains.length,
+        email_count: requestedEmails.length,
+      },
     },
     ip_address: ip,
   });

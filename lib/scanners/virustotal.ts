@@ -1,5 +1,5 @@
-import type { ScannerResult, ScannerFinding } from './types';
-import { fetchWithTimeout } from './types';
+import type { ScannerResult, ScannerFinding, ScannerOptions } from './types';
+import { fetchWithTimeout, expandCidrToIps, deduplicateIps } from './types';
 import { resolve } from 'dns/promises';
 
 /**
@@ -13,7 +13,11 @@ import { resolve } from 'dns/promises';
  *           High if 1-2 vendors, Medium if suspicious categories
  * KSĮ: Art. 11(2)(e) — tinklų saugumas
  */
-export async function scanVirustotal(domain: string): Promise<ScannerResult> {
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function scanVirustotal(domain: string, options?: ScannerOptions): Promise<ScannerResult> {
   const apiKey = process.env.VIRUSTOTAL_API_KEY?.trim();
   if (!apiKey) {
     return { module: 'virustotal', success: false, findings: [], error: 'VIRUSTOTAL_API_KEY not configured' };
@@ -163,7 +167,20 @@ export async function scanVirustotal(domain: string): Promise<ScannerResult> {
     let domainIps: string[] = [];
     try { domainIps = await resolve(domain, 'A'); } catch { /* ignore */ }
 
-    for (const ip of domainIps.slice(0, 3)) {
+    // Merge user-provided IP ranges (professional plan)
+    const extraIps = options?.ipRanges ? expandCidrToIps(options.ipRanges, 10) : [];
+    const allIpsForVt = deduplicateIps([...domainIps.slice(0, 3), ...extraIps]);
+    const maxVtIps = extraIps.length > 0 ? 10 : 3;
+
+    let vtIpCount = 0;
+    for (const ip of allIpsForVt.slice(0, maxVtIps)) {
+      // VT rate limit: 4 req/min. Add delay when checking many IPs.
+      if (vtIpCount >= 4) {
+        console.log(`[virustotal] Rate limit pause (15s) after ${vtIpCount} IP lookups`);
+        await sleep(15_000);
+        vtIpCount = 0;
+      }
+      vtIpCount++;
       try {
         const ipRes = await fetchWithTimeout(
           `https://www.virustotal.com/api/v3/ip_addresses/${encodeURIComponent(ip)}`,

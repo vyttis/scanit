@@ -1,4 +1,4 @@
-import type { ScannerResult, ScannerFinding } from './types';
+import type { ScannerResult, ScannerFinding, ScannerOptions } from './types';
 import { fetchWithTimeout } from './types';
 
 function sleep(ms: number) {
@@ -16,7 +16,7 @@ function sleep(ms: number) {
  *           Medium if lookalike domains, Low if outdated tech
  * KSĮ: Art. 11(2)(b) — incidentų valdymas
  */
-export async function scanUrlscan(domain: string): Promise<ScannerResult> {
+export async function scanUrlscan(domain: string, options?: ScannerOptions): Promise<ScannerResult> {
   const apiKey = process.env.URLSCAN_API_KEY?.trim();
   if (!apiKey) {
     return { module: 'urlscan', success: false, findings: [], error: 'URLSCAN_API_KEY not configured' };
@@ -232,6 +232,53 @@ export async function scanUrlscan(domain: string): Promise<ScannerResult> {
           nis2_article: null,
           evidence: { domain, screenshot_url: screenshotUrl },
         });
+      }
+    }
+
+    // ── 3b. Subdomain existing-scan search (professional plan) ──────
+    if (options?.subdomains && options.subdomains.length > 0) {
+      const subsToCheck = options.subdomains.slice(0, 5);
+      console.log(`[urlscan] Searching existing scans for ${subsToCheck.length} subdomains`);
+
+      const subSearchResults = await Promise.allSettled(
+        subsToCheck.map(async (sub) => {
+          const subSearchUrl = `https://urlscan.io/api/v1/search/?q=domain:${encodeURIComponent(sub)}&size=5`;
+          const res = await fetchWithTimeout(subSearchUrl, { headers: { 'API-Key': apiKey } }, 10_000);
+          if (!res.ok) return { sub, results: [] };
+          const data = await res.json();
+          return { sub, results: data.results || [] };
+        }),
+      );
+
+      for (const result of subSearchResults) {
+        if (result.status !== 'fulfilled') continue;
+        const { sub, results: subResults } = result.value;
+
+        let subMaliciousCount = 0;
+        const subMaliciousUrls: string[] = [];
+
+        for (const r of subResults) {
+          if (r.verdicts?.overall?.malicious) {
+            subMaliciousCount++;
+            subMaliciousUrls.push(r.page?.url || r.task?.url || 'unknown');
+          }
+        }
+
+        if (subMaliciousCount > 0) {
+          findings.push({
+            module: 'urlscan',
+            severity: 'critical',
+            title_lt: `${sub} — kenkėjiška veikla aptikta (${subMaliciousCount} skenavimų)`,
+            description_lt:
+              `Subdomenas ${sub} pažymėtas kaip kenkėjiškas ${subMaliciousCount} URLScan.io skenavimų metu.\n` +
+              `URL: ${subMaliciousUrls.slice(0, 3).join(', ')}`,
+            recommendation_lt:
+              `1. SKUBIAI ištirkite subdomeną.\n` +
+              `2. Pašalinkite kenkėjišką turinį arba DNS įrašą.`,
+            nis2_article: '11 str. 2 d. 2 p.',
+            evidence: { subdomain: sub, domain, malicious_count: subMaliciousCount, malicious_urls: subMaliciousUrls },
+          });
+        }
       }
     }
 

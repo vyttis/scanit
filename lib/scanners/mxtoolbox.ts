@@ -1,4 +1,4 @@
-import type { ScannerResult, ScannerFinding } from './types';
+import type { ScannerResult, ScannerFinding, ScannerOptions } from './types';
 import { fetchWithTimeout } from './types';
 import { resolve } from 'dns/promises';
 
@@ -17,7 +17,7 @@ import { resolve } from 'dns/promises';
  * Severity: Critical if on blacklist or open relay, High if no DMARC/SPF, Medium if misconfigured
  * KSĮ: Art. 11(2)(i) — tapatumo nustatymo priemonės
  */
-export async function scanMxtoolbox(domain: string): Promise<ScannerResult> {
+export async function scanMxtoolbox(domain: string, options?: ScannerOptions): Promise<ScannerResult> {
   try {
     const findings: ScannerFinding[] = [];
     const mxtoolboxApiKey = process.env.MXTOOLBOX_API_KEY?.trim();
@@ -471,6 +471,68 @@ export async function scanMxtoolbox(domain: string): Promise<ScannerResult> {
         }
       } catch {
         // MXToolbox API not available
+      }
+    }
+
+    // ── 7. Subdomain email security checks (professional plan) ───────
+    if (options?.subdomains && options.subdomains.length > 0) {
+      const subsToCheck = options.subdomains.slice(0, 5);
+      console.log(`[mxtoolbox] Checking ${subsToCheck.length} subdomains for email security`);
+
+      for (const sub of subsToCheck) {
+        // Check if subdomain has MX records
+        let subMx: Array<{ exchange: string; priority: number }> = [];
+        try {
+          subMx = (await resolve(sub, 'MX')).map((r: { exchange: string; priority: number }) => ({
+            exchange: r.exchange, priority: r.priority,
+          }));
+        } catch {
+          continue; // No MX = not an email-sending subdomain, skip
+        }
+
+        if (subMx.length === 0) continue;
+
+        // Check SPF for subdomain
+        let subSpfFound = false;
+        try {
+          const txtRecords = await resolve(sub, 'TXT');
+          const flatRecords = txtRecords.map((r: string[]) => r.join(''));
+          subSpfFound = flatRecords.some((r: string) => r.startsWith('v=spf1'));
+        } catch {
+          // No TXT records
+        }
+
+        if (!subSpfFound) {
+          findings.push({
+            module: 'mxtoolbox', severity: 'high',
+            title_lt: `${sub} — SPF įrašas nerastas`,
+            description_lt: `Subdomenas ${sub} turi MX įrašus (priima el. paštą), bet neturi SPF įrašo. Bet kas gali siųsti laiškus šio subdomeno vardu.`,
+            recommendation_lt: 'Pridėkite SPF TXT įrašą subdomenui arba pašalinkite MX įrašus, jei subdomenas nenaudojamas el. paštui.',
+            nis2_article: '11 str. 2 d. 9 p.',
+            evidence: { subdomain: sub, domain, mx_records: subMx, spf_found: false },
+          });
+        }
+
+        // Check DMARC for subdomain
+        let subDmarcFound = false;
+        try {
+          const dmarcRecords = await resolve(`_dmarc.${sub}`, 'TXT');
+          const flatDmarc = dmarcRecords.map((r: string[]) => r.join(''));
+          subDmarcFound = flatDmarc.some((r: string) => r.startsWith('v=DMARC1'));
+        } catch {
+          // No DMARC
+        }
+
+        if (!subDmarcFound) {
+          findings.push({
+            module: 'mxtoolbox', severity: 'high',
+            title_lt: `${sub} — DMARC įrašas nerastas`,
+            description_lt: `Subdomenas ${sub} turi MX įrašus, bet neturi savo DMARC įrašo. Subdomenas gali būti naudojamas sukčiavimui.`,
+            recommendation_lt: `Pridėkite DMARC TXT įrašą: _dmarc.${sub}`,
+            nis2_article: '11 str. 2 d. 9 p.',
+            evidence: { subdomain: sub, domain, dmarc_found: false },
+          });
+        }
       }
     }
 
