@@ -79,17 +79,10 @@ export default async function AdminOrganizationsPage() {
     }
   });
 
-  // Fetch plan per organization (from first admin profile in each org)
-  const { data: profilePlans } = await serviceClient
-    .from('profiles')
-    .select('org_id, plan')
-    .not('org_id', 'is', null);
-
+  // Build plan map from organizations data (plan column is on organizations table)
   const planMap = new Map<string, string>();
-  (profilePlans || []).forEach(p => {
-    if (p.org_id && !planMap.has(p.org_id)) {
-      planMap.set(p.org_id, p.plan || 'basic');
-    }
+  (organizations || []).forEach(org => {
+    planMap.set(org.id, org.plan || 'basic');
   });
 
   const orgs = (organizations || []).map(org => ({

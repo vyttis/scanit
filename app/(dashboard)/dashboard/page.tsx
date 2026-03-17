@@ -22,8 +22,8 @@ export default async function DashboardPage() {
     .eq('id', user.id)
     .single();
 
-  // Superadmin without org — redirect to admin dashboard
-  if (profile?.role === 'superadmin' && !profile?.org_id) {
+  // Superadmin — always redirect to admin dashboard (they manage all orgs)
+  if (profile?.role === 'superadmin') {
     redirect('/admin');
   }
 
