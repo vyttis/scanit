@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server';
 import { generateReport } from '@/lib/report/generator';
 import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
 
+export const maxDuration = 120; // PDF generation + Claude enrichment can take time
+
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**

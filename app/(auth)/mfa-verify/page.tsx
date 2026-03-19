@@ -1,23 +1,24 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
-export default function MfaVerifyPage() {
+function MfaVerifyForm() {
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
+
+  const challengeId = searchParams.get('challenge');
+  const factorId = searchParams.get('factor');
 
   async function handleVerify(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
-
-    const challengeId = sessionStorage.getItem('mfa_challenge_id');
-    const factorId = sessionStorage.getItem('mfa_factor_id');
 
     if (!challengeId || !factorId) {
       setError('Sesija pasibaigė. Prisijunkite iš naujo.');
@@ -37,9 +38,20 @@ export default function MfaVerifyPage() {
       return;
     }
 
-    sessionStorage.removeItem('mfa_challenge_id');
-    sessionStorage.removeItem('mfa_factor_id');
     router.push('/dashboard');
+  }
+
+  if (!challengeId || !factorId) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="max-w-md w-full p-8 bg-white rounded-lg shadow-md text-center">
+          <p className="text-gray-600 mb-4">Sesija pasibaigė arba nuoroda neteisinga.</p>
+          <a href="/login" className="text-blue-600 hover:text-blue-800 font-medium">
+            Grįžti į prisijungimą
+          </a>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -90,5 +102,17 @@ export default function MfaVerifyPage() {
         </form>
       </div>
     </div>
+  );
+}
+
+export default function MfaVerifyPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <p className="text-gray-500">Kraunama...</p>
+      </div>
+    }>
+      <MfaVerifyForm />
+    </Suspense>
   );
 }

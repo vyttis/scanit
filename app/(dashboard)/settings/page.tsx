@@ -525,7 +525,7 @@ export default function SettingsPage() {
 
       {/* Auto-scan settings — admin only, verified org */}
       {org?.verified && userRole === 'admin' && (
-        <AutoScanSettings orgId={org.id} initialEnabled={(org as unknown as Record<string, unknown>).auto_scan_enabled as boolean ?? false} initialDay={(org as unknown as Record<string, unknown>).auto_scan_day as number ?? 1} />
+        <AutoScanSettings orgId={org.id} initialEnabled={org.auto_scan_enabled ?? false} initialDay={org.auto_scan_day ?? 1} />
       )}
 
       {/* Audit log link — admin only */}

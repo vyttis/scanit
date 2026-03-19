@@ -22,11 +22,13 @@ function sanitizeScannerError(error: string): string {
   if (/[A-Z_]+_API_KEY/i.test(error) || /not configured/i.test(error)) {
     return 'Skenavimo modulis nesukonfigūruotas.';
   }
+  // Strip anything that looks like a key=value pair
+  let sanitized = error.replace(/[A-Z_]+=\S+/g, '[REDACTED]');
   // Strip raw HTTP error bodies or stack traces
-  if (error.length > 200) {
-    return error.slice(0, 200);
+  if (sanitized.length > 200) {
+    sanitized = sanitized.slice(0, 200);
   }
-  return error;
+  return sanitized;
 }
 
 export async function POST(request: Request) {

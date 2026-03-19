@@ -10,31 +10,38 @@ interface ReportDownloadButtonProps {
 export function ReportDownloadButton({ scanId, hasReport }: ReportDownloadButtonProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reportReady, setReportReady] = useState(hasReport);
 
   async function handleDownload() {
     setLoading(true);
     setError(null);
 
     try {
-      if (!hasReport) {
-        // Generate report first via POST
-        const res = await fetch('/api/reports', {
+      // Step 1: Generate report if not yet generated
+      if (!reportReady) {
+        const genRes = await fetch('/api/reports', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ scan_id: scanId }),
         });
-        const data = await res.json();
-        if (!res.ok) {
+
+        if (!genRes.ok) {
+          const data = await genRes.json().catch(() => ({ error: 'Klaida generuojant ataskaitą.' }));
           setError(data.error || 'Klaida generuojant ataskaitą.');
+          setLoading(false);
           return;
         }
+
+        // Mark as ready so next click doesn't re-generate
+        setReportReady(true);
       }
 
-      // Download via fetch + blob to avoid popup blockers
-      const res = await fetch(`/api/reports/download?scan_id=${scanId}`);
+      // Step 2: Download the report file
+      const res = await fetch(`/api/reports/download?scan_id=${encodeURIComponent(scanId)}`);
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
+        const data = await res.json().catch(() => ({ error: 'Klaida atsisiunčiant ataskaitą.' }));
         setError(data.error || 'Klaida atsisiunčiant ataskaitą.');
+        setLoading(false);
         return;
       }
 
@@ -64,9 +71,11 @@ export function ReportDownloadButton({ scanId, hasReport }: ReportDownloadButton
         className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
         aria-label={loading ? 'Ataskaita generuojama' : 'Atsisiųsti skenavimo ataskaitą'}
       >
-        {loading ? 'Kraunama...' : 'Atsisiųsti ataskaitą'}
+        {loading
+          ? (reportReady ? 'Atsisiunčiama...' : 'Generuojama ataskaita...')
+          : 'Atsisiųsti ataskaitą'}
       </button>
-      {error && <span className="text-xs text-red-600">{error}</span>}
+      {error && <span className="text-xs text-red-600 max-w-[200px]">{error}</span>}
     </div>
   );
 }

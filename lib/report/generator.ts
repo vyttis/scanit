@@ -448,7 +448,7 @@ export async function generateReport(scanId: string): Promise<GenerateReportResu
     .from('reports')
     .upload(pdfPath, uploadBuffer, {
       contentType: uploadContentType,
-      upsert: false,
+      upsert: true,
     });
 
   if (uploadError) {

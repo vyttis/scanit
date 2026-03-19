@@ -40,7 +40,7 @@ export function RiskTrendChart({ points }: RiskTrendChartProps) {
             <div key={i} className="flex flex-col items-center flex-1">
               <span className="text-xs font-medium text-gray-700 mb-1">{point.score}</span>
               <div
-                className={`w-full max-w-[${barWidth}px] ${barColor(point.score)} rounded-t-md transition-all`}
+                className={`w-full ${barColor(point.score)} rounded-t-md transition-all`}
                 style={{ height: `${heightPct}%`, maxWidth: `${barWidth}px` }}
               />
               <span className="text-xs text-gray-400 mt-2 truncate w-full text-center">

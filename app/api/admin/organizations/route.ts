@@ -152,15 +152,18 @@ export async function PATCH(request: Request) {
         return NextResponse.json({ error: 'Netinkamas planas.' }, { status: 400 });
       }
       // Update plan on the organization (plan lives on organizations table)
-      const { error: planError } = await serviceClient
+      const { data: updatedPlanOrg, error: planError } = await serviceClient
         .from('organizations')
         .update({ plan: newPlan })
-        .eq('id', id);
+        .eq('id', id)
+        .select()
+        .single();
       if (planError) {
-        return NextResponse.json({ error: 'Klaida keičiant planą.' }, { status: 500 });
+        console.error('Plan change error:', planError);
+        return NextResponse.json({ error: `Klaida keičiant planą: ${planError.message}` }, { status: 500 });
       }
       auditAction = 'org_plan_changed';
-      auditDetails = { new_plan: newPlan, org_name: org.name };
+      auditDetails = { new_plan: newPlan, old_plan: org.plan, org_name: org.name };
       await serviceClient.from('audit_log').insert({
         org_id: id,
         user_id: user.id,
@@ -168,7 +171,7 @@ export async function PATCH(request: Request) {
         details: auditDetails,
         ip_address: ip,
       });
-      return NextResponse.json({ success: true, organization: { ...org, plan: newPlan } });
+      return NextResponse.json({ success: true, organization: updatedPlanOrg });
     }
 
     case 'update':

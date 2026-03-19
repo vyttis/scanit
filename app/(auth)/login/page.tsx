@@ -57,10 +57,8 @@ function LoginForm() {
         return;
       }
 
-      // Store challenge ID and redirect to MFA verify page
-      sessionStorage.setItem('mfa_challenge_id', challengeData.id);
-      sessionStorage.setItem('mfa_factor_id', factor.id);
-      router.push('/mfa-verify');
+      // Pass challenge/factor IDs via URL params (not sessionStorage — avoids XSS exposure)
+      router.push(`/mfa-verify?challenge=${encodeURIComponent(challengeData.id)}&factor=${encodeURIComponent(factor.id)}`);
       return;
     }
 

@@ -6,8 +6,9 @@ export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get('code');
   const rawNext = searchParams.get('next') ?? '/dashboard';
-  // Prevent open redirect: only allow relative paths starting with /
-  const next = (rawNext.startsWith('/') && !rawNext.startsWith('//')) ? rawNext : '/dashboard';
+  // Prevent open redirect: only allow relative paths, block protocol-relative URLs and special chars
+  const SAFE_PATH = /^\/[a-zA-Z0-9\-_/]*$/;
+  const next = SAFE_PATH.test(rawNext) ? rawNext : '/dashboard';
 
   if (code) {
     const cookieStore = cookies();

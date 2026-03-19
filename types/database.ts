@@ -19,6 +19,8 @@ export type ScanStatus = 'queued' | 'running' | 'completed' | 'failed';
 export type ScanModule = 'shodan' | 'hibp' | 'ssl' | 'mxtoolbox' | 'securitytrails' | 'virustotal' | 'abuseipdb' | 'urlscan';
 export type FindingSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 
+export type ProfileStatus = 'pending' | 'approved' | 'rejected' | 'suspended';
+
 export interface Organization {
   id: string;
   name: string;
@@ -28,6 +30,11 @@ export interface Organization {
   contact_email: string;
   sector: OrganizationSector | null;
   plan: PlanType;
+  ip_ranges: string[] | null;
+  subdomains: string[] | null;
+  employee_emails: string[] | null;
+  auto_scan_enabled: boolean;
+  auto_scan_day: number | null;
   created_at: string;
 }
 
@@ -35,6 +42,9 @@ export interface Profile {
   id: string;
   org_id: string | null;
   role: UserRole;
+  status: ProfileStatus;
+  first_name: string | null;
+  last_name: string | null;
   created_at: string;
 }
 
@@ -104,6 +114,18 @@ export interface FindingStatus {
   note: string | null;
   updated_by: string | null;
   updated_at: string;
+  created_at: string;
+}
+
+export interface Notification {
+  id: string;
+  org_id: string;
+  user_id: string | null;
+  type: string;
+  title_lt: string;
+  body_lt: string | null;
+  link: string | null;
+  read: boolean;
   created_at: string;
 }
 
