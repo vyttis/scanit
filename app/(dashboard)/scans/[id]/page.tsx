@@ -50,7 +50,7 @@ export default async function ScanDetailPage({ params }: { params: { id: string 
   const queryClient = isSuperadmin ? serviceClient : supabase;
   const { data: scan } = await queryClient
     .from('scans')
-    .select('*, organizations(name, domain)')
+    .select('*, organizations(name, domain, ip_ranges, subdomains, employee_emails)')
     .eq('id', scanId)
     .single();
 
@@ -113,12 +113,15 @@ export default async function ScanDetailPage({ params }: { params: { id: string 
     failed: 'bg-red-100 text-red-800',
   };
 
-  const orgName = (scan as Record<string, unknown>).organizations
-    ? ((scan as Record<string, unknown>).organizations as { name: string; domain: string }).name
-    : '';
-  const orgDomain = (scan as Record<string, unknown>).organizations
-    ? ((scan as Record<string, unknown>).organizations as { name: string; domain: string }).domain
-    : '';
+  const orgData = (scan as Record<string, unknown>).organizations as {
+    name: string;
+    domain: string;
+    ip_ranges: string[] | null;
+    subdomains: string[] | null;
+    employee_emails: string[] | null;
+  } | null;
+  const orgName = orgData?.name ?? '';
+  const orgDomain = orgData?.domain ?? '';
 
   const duration = scan.started_at && scan.completed_at
     ? Math.round((new Date(scan.completed_at).getTime() - new Date(scan.started_at).getTime()) / 1000)
@@ -181,8 +184,8 @@ export default async function ScanDetailPage({ params }: { params: { id: string 
         </div>
       </div>
 
-      {/* Scan scope */}
-      {scan.scan_scope && (
+      {/* Scan scope — read from organization data */}
+      {orgData && (orgData.ip_ranges?.length || orgData.subdomains?.length || orgData.employee_emails?.length) && (
         <div className="bg-white rounded-lg shadow-md p-6">
           <h2 className="text-sm font-medium text-gray-500 mb-3">Skenavimo apimtis</h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
@@ -193,24 +196,24 @@ export default async function ScanDetailPage({ params }: { params: { id: string 
             <div>
               <span className="text-xs font-medium text-gray-500 uppercase">IP rangai</span>
               <p className="text-gray-900 mt-1">
-                {(scan.scan_scope as Record<string, unknown>).ip_ranges
-                  ? (((scan.scan_scope as Record<string, unknown>).ip_ranges as string[]).join(', '))
+                {orgData.ip_ranges?.length
+                  ? orgData.ip_ranges.join(', ')
                   : 'nenurodyti'}
               </p>
             </div>
             <div>
               <span className="text-xs font-medium text-gray-500 uppercase">Subdomenai</span>
               <p className="text-gray-900 mt-1">
-                {(scan.scan_scope as Record<string, unknown>).subdomains
-                  ? `${((scan.scan_scope as Record<string, unknown>).subdomains as string[]).length} subdomenų`
+                {orgData.subdomains?.length
+                  ? `${orgData.subdomains.length} subdomenų`
                   : 'nenurodyti'}
               </p>
             </div>
             <div>
               <span className="text-xs font-medium text-gray-500 uppercase">El. paštai</span>
               <p className="text-gray-900 mt-1">
-                {(scan.scan_scope as Record<string, unknown>).email_count
-                  ? `${(scan.scan_scope as Record<string, unknown>).email_count} el. paštų (neišsaugoma)`
+                {orgData.employee_emails?.length
+                  ? `${orgData.employee_emails.length} el. paštų`
                   : 'nenurodyti'}
               </p>
             </div>
