@@ -498,7 +498,6 @@ export async function generateReport(scanId: string): Promise<GenerateReportResu
  * Info findings keep their scanner-generated text as-is.
  */
 async function enrichFindings(findings: Finding[]): Promise<Finding[]> {
-  const enriched: Finding[] = [];
   const hasApiKey = !!process.env.ANTHROPIC_API_KEY;
 
   if (!hasApiKey) {
@@ -506,32 +505,44 @@ async function enrichFindings(findings: Finding[]): Promise<Finding[]> {
     return findings;
   }
 
-  for (const finding of findings) {
-    // Always enrich non-info findings for structured sections
-    // Skip info findings — their scanner-generated text is sufficient
-    const shouldEnrich = finding.severity !== 'info';
+  // Process findings in parallel batches of 5 to avoid API rate limits
+  // while staying well within the request timeout
+  const BATCH_SIZE = 5;
+  const enriched: Finding[] = new Array(findings.length);
 
-    if (shouldEnrich) {
-      try {
-        console.log(`Enriching finding: ${finding.module} / ${finding.severity} / ${finding.title_lt.slice(0, 60)}`);
-        const generated = await generateFindingDescription({
-          module: finding.module,
-          severity: finding.severity,
-          title_lt: finding.title_lt,
-          evidence: finding.evidence,
-        });
-        enriched.push({
-          ...finding,
-          description_lt: generated.description_lt,
-          recommendation_lt: generated.recommendation_lt,
-        });
-      } catch (err) {
-        console.error(`Failed to enrich finding ${finding.id}:`, err);
-        enriched.push(finding);
-      }
-    } else {
-      enriched.push(finding);
-    }
+  for (let i = 0; i < findings.length; i += BATCH_SIZE) {
+    const batch = findings.slice(i, i + BATCH_SIZE);
+    const batchResults = await Promise.all(
+      batch.map(async (finding) => {
+        const shouldEnrich = finding.severity !== 'info';
+
+        if (!shouldEnrich) {
+          return finding;
+        }
+
+        try {
+          console.log(`Enriching finding: ${finding.module} / ${finding.severity} / ${finding.title_lt.slice(0, 60)}`);
+          const generated = await generateFindingDescription({
+            module: finding.module,
+            severity: finding.severity,
+            title_lt: finding.title_lt,
+            evidence: finding.evidence,
+          });
+          return {
+            ...finding,
+            description_lt: generated.description_lt,
+            recommendation_lt: generated.recommendation_lt,
+          };
+        } catch (err) {
+          console.error(`Failed to enrich finding ${finding.id}:`, err);
+          return finding;
+        }
+      })
+    );
+
+    batchResults.forEach((result, batchIdx) => {
+      enriched[i + batchIdx] = result;
+    });
   }
 
   return enriched;
