@@ -87,7 +87,8 @@ export async function GET() {
     .from('reports')
     .select('org_id, risk_score, created_at')
     .in('org_id', sectorOrgIds)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(10000);
 
   // Get latest report per org
   const latestScores = new Map<string, number>();

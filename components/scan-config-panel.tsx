@@ -63,7 +63,10 @@ export function ScanConfigPanel({ orgVerified, isAdmin, domain, plan }: ScanConf
     }
 
     try {
-      const res = await fetch(`/api/scan?id=${id}`);
+      const pollController = new AbortController();
+      const pollTimeout = setTimeout(() => pollController.abort(), 10000);
+      const res = await fetch(`/api/scan?id=${id}`, { signal: pollController.signal });
+      clearTimeout(pollTimeout);
       if (res.ok) {
         const data = await res.json();
         setScanStatus(data.status);
@@ -117,11 +120,15 @@ export function ScanConfigPanel({ orgVerified, isAdmin, domain, plan }: ScanConf
     }
 
     try {
+      const scanController = new AbortController();
+      const scanTimeout = setTimeout(() => scanController.abort(), 30000);
       const res = await fetch('/api/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
+        signal: scanController.signal,
       });
+      clearTimeout(scanTimeout);
 
       const data = await res.json();
 

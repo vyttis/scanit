@@ -26,30 +26,35 @@ export default async function AdminOrganizationsPage() {
   const { data: organizations } = await serviceClient
     .from('organizations')
     .select('*')
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(500);
 
   // Fetch scan counts per organization
   const { data: scanCounts } = await serviceClient
     .from('scans')
-    .select('org_id');
+    .select('org_id')
+    .limit(10000);
 
   // Fetch latest completed reports with risk scores per organization
   const { data: latestReports } = await serviceClient
     .from('reports')
     .select('org_id, risk_score, created_at')
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(10000);
 
   // Fetch total findings per organization
   const { data: allFindings } = await serviceClient
     .from('findings')
-    .select('org_id');
+    .select('org_id')
+    .limit(50000);
 
   // Fetch latest completed scan dates per organization
   const { data: latestScans } = await serviceClient
     .from('scans')
     .select('org_id, completed_at')
     .eq('status', 'completed')
-    .order('completed_at', { ascending: false });
+    .order('completed_at', { ascending: false })
+    .limit(10000);
 
   // Build scan count map
   const scanCountMap = new Map<string, number>();

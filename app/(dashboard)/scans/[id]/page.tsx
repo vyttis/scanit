@@ -1,5 +1,5 @@
 import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import { FindingsList } from '@/components/findings-list';
 import { RiskScoreBadge } from '@/components/risk-score-badge';
@@ -35,7 +35,7 @@ export default async function ScanDetailPage({ params }: { params: { id: string 
 
   const supabase = createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
+  if (!user) redirect('/login');
 
   const serviceClient = createServiceRoleClient();
   const { data: profile } = await serviceClient

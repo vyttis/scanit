@@ -15,7 +15,7 @@ export default async function DashboardPage() {
   const supabase = createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  if (!user) return null;
+  if (!user) redirect('/login');
 
   // Use service role to read profile — superadmin has org_id=NULL which breaks RLS
   const serviceClient = createServiceRoleClient();
@@ -72,31 +72,29 @@ export default async function DashboardPage() {
     );
   }
 
-  // Load latest scan
-  const { data: scansArr } = await supabase
-    .from('scans')
-    .select('*')
-    .eq('org_id', org.id)
-    .order('created_at', { ascending: false })
-    .limit(1);
+  // Load latest scan, latest report, and trend reports in parallel
+  const [{ data: scansArr }, { data: reportsArr }, { data: trendReports }] = await Promise.all([
+    supabase
+      .from('scans')
+      .select('*')
+      .eq('org_id', org.id)
+      .order('created_at', { ascending: false })
+      .limit(1),
+    supabase
+      .from('reports')
+      .select('*')
+      .eq('org_id', org.id)
+      .order('created_at', { ascending: false })
+      .limit(1),
+    supabase
+      .from('reports')
+      .select('risk_score, created_at')
+      .eq('org_id', org.id)
+      .order('created_at', { ascending: true })
+      .limit(5),
+  ]);
   const latestScan = scansArr?.[0] ?? null;
-
-  // Load latest report
-  const { data: reportsArr } = await supabase
-    .from('reports')
-    .select('*')
-    .eq('org_id', org.id)
-    .order('created_at', { ascending: false })
-    .limit(1);
   const latestReport = reportsArr?.[0] ?? null;
-
-  // Load last 5 reports for trend chart
-  const { data: trendReports } = await supabase
-    .from('reports')
-    .select('risk_score, created_at')
-    .eq('org_id', org.id)
-    .order('created_at', { ascending: true })
-    .limit(5);
 
   const trendPoints = (trendReports ?? [])
     .filter((r) => r.risk_score !== null)
@@ -174,15 +172,22 @@ export default async function DashboardPage() {
       )
     : { overdue: 0, expiringSoon: 0 };
 
-  // Fetch benchmark data (client's sector ranking)
+  // Fetch benchmark data (client's sector ranking) with 5s timeout
   let benchmarkData: { available: boolean; percentile?: number; sector_avg?: number; user_score?: number; sector_count?: number; sector?: string } | null = null;
   try {
-    const benchRes = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || ''}/api/benchmark`, {
-      headers: { cookie: (await import('next/headers')).cookies().toString() },
-      cache: 'no-store',
-    });
-    if (benchRes.ok) {
-      benchmarkData = await benchRes.json();
+    const benchController = new AbortController();
+    const benchTimeout = setTimeout(() => benchController.abort(), 5000);
+    try {
+      const benchRes = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || ''}/api/benchmark`, {
+        headers: { cookie: (await import('next/headers')).cookies().toString() },
+        cache: 'no-store',
+        signal: benchController.signal,
+      });
+      if (benchRes.ok) {
+        benchmarkData = await benchRes.json();
+      }
+    } finally {
+      clearTimeout(benchTimeout);
     }
   } catch { /* silent — benchmark is optional */ }
 

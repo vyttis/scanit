@@ -154,7 +154,7 @@ export default async function AdminDashboardPage() {
     serviceClient.from('profiles').select('id', { count: 'exact', head: true }).eq('status', 'approved'),
     serviceClient.from('scans').select('id', { count: 'exact', head: true }).gte('created_at', startOfMonth),
     serviceClient.from('reports').select('id', { count: 'exact', head: true }).gte('created_at', startOfMonth),
-    serviceClient.from('reports').select('risk_score, org_id').order('created_at', { ascending: false }),
+    serviceClient.from('reports').select('risk_score, org_id').order('created_at', { ascending: false }).limit(10000),
     serviceClient
       .from('audit_log')
       .select('id, action, created_at, user_id, org_id')
@@ -195,39 +195,28 @@ export default async function AdminDashboardPage() {
     ? Math.round(riskScores.reduce((a, b) => a + b, 0) / riskScores.length)
     : 0;
 
-  // Registration chart data — last 6 months
-  const registrationData: { label: string; value: number }[] = [];
-  for (let i = 5; i >= 0; i--) {
+  // Registration chart data + Scan activity chart — last 6 months (parallel)
+  const months = Array.from({ length: 6 }, (_, idx) => {
+    const i = 5 - idx;
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 1);
     const label = d.toLocaleDateString('lt-LT', { year: 'numeric', month: 'short' });
-    registrationData.push({ label, value: 0 });
+    return { label, start: d.toISOString(), end: monthEnd.toISOString() };
+  });
 
-    const { count } = await serviceClient
-      .from('organizations')
-      .select('id', { count: 'exact', head: true })
-      .gte('created_at', d.toISOString())
-      .lt('created_at', monthEnd.toISOString());
+  const [regResults, scanResults] = await Promise.all([
+    Promise.all(months.map(({ start, end }) =>
+      serviceClient.from('organizations').select('id', { count: 'exact', head: true })
+        .gte('created_at', start).lt('created_at', end)
+    )),
+    Promise.all(months.map(({ start, end }) =>
+      serviceClient.from('scans').select('id', { count: 'exact', head: true })
+        .gte('created_at', start).lt('created_at', end)
+    )),
+  ]);
 
-    registrationData[registrationData.length - 1].value = count ?? 0;
-  }
-
-  // Scan activity chart — last 6 months
-  const scanActivityData: { label: string; value: number }[] = [];
-  for (let i = 5; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 1);
-    const label = d.toLocaleDateString('lt-LT', { year: 'numeric', month: 'short' });
-    scanActivityData.push({ label, value: 0 });
-
-    const { count } = await serviceClient
-      .from('scans')
-      .select('id', { count: 'exact', head: true })
-      .gte('created_at', d.toISOString())
-      .lt('created_at', monthEnd.toISOString());
-
-    scanActivityData[scanActivityData.length - 1].value = count ?? 0;
-  }
+  const registrationData = months.map((m, i) => ({ label: m.label, value: regResults[i].count ?? 0 }));
+  const scanActivityData = months.map((m, i) => ({ label: m.label, value: scanResults[i].count ?? 0 }));
 
   // Risk distribution — group latest reports by risk level
   let lowRisk = 0;

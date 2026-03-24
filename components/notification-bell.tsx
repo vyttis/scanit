@@ -20,14 +20,16 @@ export function NotificationBell() {
   const panelRef = useRef<HTMLDivElement>(null);
 
   const fetchNotifications = useCallback(async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
     try {
-      const res = await fetch('/api/notifications?limit=10');
+      const res = await fetch('/api/notifications?limit=10', { signal: controller.signal });
       if (res.ok) {
         const data = await res.json();
         setNotifications(data.notifications);
         setUnreadCount(data.unread_count);
       }
-    } catch { /* silent */ }
+    } catch { /* silent */ } finally { clearTimeout(timeout); }
   }, []);
 
   useEffect(() => {
@@ -50,24 +52,32 @@ export function NotificationBell() {
 
   const markAllRead = useCallback(async () => {
     setLoading(true);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
     try {
       await fetch('/api/notifications', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mark_all_read: true }),
+        signal: controller.signal,
       });
       setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
       setUnreadCount(0);
-    } catch { /* silent */ }
+    } catch { /* silent */ } finally { clearTimeout(timeout); }
     setLoading(false);
   }, []);
 
   const markRead = useCallback(async (id: string) => {
-    await fetch('/api/notifications', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id }),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+        signal: controller.signal,
+      });
+    } catch { /* silent */ } finally { clearTimeout(timeout); }
     setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, read: true } : n));
     setUnreadCount((prev) => Math.max(0, prev - 1));
   }, []);

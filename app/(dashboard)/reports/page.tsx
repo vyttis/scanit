@@ -1,4 +1,5 @@
 import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
+import { redirect } from 'next/navigation';
 import { ReportDownloadButton } from '@/components/report-download-button';
 import { formatLithuanianDate } from '@/lib/utils/date';
 import Link from 'next/link';
@@ -6,7 +7,7 @@ import Link from 'next/link';
 export default async function ReportsPage() {
   const supabase = createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
+  if (!user) redirect('/login');
 
   // Use service role for profile read — superadmin has org_id=NULL which breaks RLS
   const serviceClient = createServiceRoleClient();

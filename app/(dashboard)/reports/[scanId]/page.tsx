@@ -1,5 +1,5 @@
 import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import { ReportViewer } from '@/components/report-viewer';
 
@@ -14,7 +14,7 @@ export default async function ReportViewerPage({ params }: { params: { scanId: s
 
   const supabase = createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
+  if (!user) redirect('/login');
 
   const serviceClient = createServiceRoleClient();
   const { data: profile } = await serviceClient

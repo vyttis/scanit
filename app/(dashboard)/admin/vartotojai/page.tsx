@@ -40,7 +40,8 @@ export default async function AdminUsersPage() {
       )
     `)
     .in('status', ['pending', 'approved', 'rejected', 'suspended'])
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(500);
 
   // Get emails from auth.users
   const { data: authUsers } = await serviceClient.auth.admin.listUsers();

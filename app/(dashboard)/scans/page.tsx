@@ -1,4 +1,5 @@
 import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
+import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { ReportDownloadButton } from '@/components/report-download-button';
 import { formatLithuanianDateTime } from '@/lib/utils/date';
@@ -6,7 +7,7 @@ import { formatLithuanianDateTime } from '@/lib/utils/date';
 export default async function ScansPage() {
   const supabase = createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
+  if (!user) redirect('/login');
 
   // Use service role for profile read — superadmin has org_id=NULL which breaks RLS
   const serviceClient = createServiceRoleClient();
@@ -32,28 +33,40 @@ export default async function ScansPage() {
   let scansQuery = client
     .from('scans')
     .select('*, organizations(name)')
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(200);
   if (!isSuperadmin) {
     scansQuery = scansQuery.eq('org_id', profile!.org_id!);
   }
-  const { data: scans } = await scansQuery;
 
   let reportsQuery = client
     .from('reports')
-    .select('id, scan_id, risk_score, critical_count, high_count, medium_count, low_count, pdf_path');
+    .select('id, scan_id, risk_score, critical_count, high_count, medium_count, low_count, pdf_path')
+    .limit(200);
   if (!isSuperadmin) {
     reportsQuery = reportsQuery.eq('org_id', profile!.org_id!);
   }
-  const { data: reports } = await reportsQuery;
 
-  // Also fetch finding counts directly from findings table for scans without reports
-  let findingsQuery = client
-    .from('findings')
-    .select('scan_id, severity');
-  if (!isSuperadmin) {
-    findingsQuery = findingsQuery.eq('org_id', profile!.org_id!);
+  // Run scans and reports queries in parallel
+  const [{ data: scans }, { data: reports }] = await Promise.all([scansQuery, reportsQuery]);
+
+  // Fetch finding counts only for scans that don't have a report yet
+  const reportScanIds = new Set((reports ?? []).map(r => r.scan_id));
+  const scansWithoutReport = (scans ?? []).filter(s => !reportScanIds.has(s.id)).map(s => s.id);
+
+  let allFindings: { scan_id: string; severity: string }[] | null = null;
+  if (scansWithoutReport.length > 0) {
+    let findingsQuery = client
+      .from('findings')
+      .select('scan_id, severity')
+      .in('scan_id', scansWithoutReport)
+      .limit(5000);
+    if (!isSuperadmin) {
+      findingsQuery = findingsQuery.eq('org_id', profile!.org_id!);
+    }
+    const { data } = await findingsQuery;
+    allFindings = data;
   }
-  const { data: allFindings } = await findingsQuery;
 
   const reportByScanId = new Map(
     (reports ?? []).map((r) => [r.scan_id, r]),

@@ -90,11 +90,15 @@ export function DataEnrichment({
     }
 
     try {
+      const enrichController = new AbortController();
+      const enrichTimeout = setTimeout(() => enrichController.abort(), 15000);
       const res = await fetch('/api/enrichment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ orgId, field, values }),
+        signal: enrichController.signal,
       });
+      clearTimeout(enrichTimeout);
 
       const data = await res.json();
 
